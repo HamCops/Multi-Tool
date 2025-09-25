@@ -1,0 +1,858 @@
+# Load WPF Assemblies
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName PresentationCore
+
+# Security and Utility Classes
+class InputValidator {
+    static [bool] IsValidHostname([string] $hostname) {
+        return $hostname -match '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
+    }
+
+    static [bool] IsValidIPv4([string] $ip) {
+        return $ip -match '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    }
+
+    static [string] SanitizeInput([string] $input) {
+        return $input.Trim() -replace '[^\w\.\-]', ''
+    }
+
+    static [bool] IsValidHostnameOrIP([string] $input) {
+        $sanitized = [InputValidator]::SanitizeInput($input)
+        return [InputValidator]::IsValidIPv4($sanitized) -or [InputValidator]::IsValidHostname($sanitized)
+    }
+}
+
+class Logger {
+    static [string] $LogPath = "$env:TEMP\MultiTool.log"
+
+    static [void] WriteLog([string] $level, [string] $message) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$timestamp] [$level] $message"
+        Add-Content -Path [Logger]::LogPath -Value $logEntry -ErrorAction SilentlyContinue
+    }
+
+    static [void] Info([string] $message) { [Logger]::WriteLog("INFO", $message) }
+    static [void] Warn([string] $message) { [Logger]::WriteLog("WARN", $message) }
+    static [void] Error([string] $message) { [Logger]::WriteLog("ERROR", $message) }
+}
+
+# Configuration
+$Global:AppConfig = @{
+    Network = @{
+        DefaultTimeout = 30
+        PingCount = 1
+        MaxRetries = 3
+    }
+    URLs = @{
+        Windows11Installer = "https://go.microsoft.com/fwlink/?linkid=2171764"
+        Windows11InstallerHash = "" # Should be updated with actual hash
+        IncidentIQ = "https://sidneycityschools.incidentiq.com/"
+    }
+}
+
+# XAML GUI Definition
+$XAML = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Multi_Tool" Height="650" Width="900" Background="#012456">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Status Label -->
+        <Label Name="lblStatus" Content="Enter IP or Hostname" Foreground="White" FontSize="14" HorizontalAlignment="Center" Grid.Row="0"/>
+
+        <!-- Hostname/IP Input -->
+        <StackPanel Orientation="Horizontal" Grid.Row="1" HorizontalAlignment="Center">
+            <TextBox Name="txtHostname" Width="300" Height="30" TextAlignment="Center" />
+            <Button Name="btnResolve" Content="Resolve" Width="100" Margin="10,0,0,0"/>
+        </StackPanel>
+
+        <!-- Button Grid -->
+        <WrapPanel Grid.Row="2" HorizontalAlignment="Center">
+            <Button Name="btnPing" Content="Ping" Width="130" Margin="5"/>
+            <Button Name="btnGetSystemInfo" Content="Get System Info" Width="180" Margin="5"/>
+            <Button Name="btnGetUpTime" Content="Get Up Time" Width="180" Margin="5"/>
+            <Button Name="btnOpenPSSession" Content="Open PS Session" Width="180" Margin="5"/>
+            <Button Name="btnGpUpdate" Content="Run GPUpdate" Width="180" Margin="5"/>
+            <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Width="180" Margin="5"/>
+            <Button Name="btnMSRA" Content="Launch MSRA" Width="180" Margin="5"/>
+            <Button Name="btnRDC" Content="Launch RDC" Width="180" Margin="5"/>
+            <Button Name="btnEventLog" Content="Open Event Log" Width="180" Margin="5"/>
+            <Button Name="btnIncident" Content="Open IncidentIQ" Width="150" Margin="5"/>
+            <Button Name="btnUpgradeWindows11" Content="Upgrade to Windows 11" Width="180" Margin="5"/>
+        </WrapPanel>
+
+        <!-- Progress Bar -->
+        <ProgressBar Name="progressBar" Grid.Row="3" Width="850" Height="20" Margin="5" Visibility="Hidden" Maximum="100" Minimum="0"/>
+
+        <!-- Output Box -->
+        <TextBox Name="terminalOutputBox" Grid.Row="4" Width="850" Height="250" IsReadOnly="True"
+                 VerticalScrollBarVisibility="Auto" Background="Black" Foreground="White"
+                 AcceptsReturn="True" TextWrapping="Wrap"/>
+    </Grid>
+</Window>
+"@
+
+# Load XAML
+$Window = [System.Windows.Markup.XamlReader]::Load([System.Xml.XmlReader]::Create([System.IO.StringReader]::new($XAML)))
+
+# Retrieve controls
+$txtHostname = $Window.FindName("txtHostname")
+$btnResolve = $Window.FindName("btnResolve")
+$btnPing = $Window.FindName("btnPing")
+$btnGetSystemInfo = $Window.FindName("btnGetSystemInfo")
+$btnOpenPSSession = $Window.FindName("btnOpenPSSession")
+$terminalOutputBox = $Window.FindName("terminalOutputBox")
+$btnGpUpdate = $Window.FindName("btnGpUpdate")
+$btnMSRA = $Window.FindName("btnMSRA")
+$btnRDC = $Window.FindName("btnRDC")
+$btnEventLog = $Window.FindName("btnEventLog")
+$btnIncident = $Window.FindName("btnIncident")
+$btnGetInstalledSoftware = $Window.FindName("btnGetInstalledSoftware")
+$btnGetUpTime = $Window.FindName("btnGetUpTime")
+$btnUpgradeWindows11 = $Window.FindName("btnUpgradeWindows11")
+$progressBar = $Window.FindName("progressBar")
+
+# Utility Functions
+function Get-SafeDateTime {
+    param($DateTimeValue)
+
+    try {
+        if ($DateTimeValue -is [DateTime]) {
+            return $DateTimeValue
+        }
+        elseif ($DateTimeValue -is [string]) {
+            return [System.Management.ManagementDateTimeConverter]::ToDateTime($DateTimeValue)
+        }
+        else {
+            return [DateTime]::FromFileTime($DateTimeValue)
+        }
+    }
+    catch {
+        [Logger]::Warn("Could not parse datetime: $DateTimeValue")
+        return $null
+    }
+}
+
+function Test-RemoteConnectivity {
+    param($ComputerName, $TimeoutSeconds = 10)
+
+    $result = @{
+        IsReachable = $false
+        CanResolve = $false
+        CanPing = $false
+        CanWinRM = $false
+    }
+
+    try {
+        $resolved = Resolve-DnsName -Name $ComputerName -ErrorAction Stop
+        $result.CanResolve = $true
+    } catch { }
+
+    try {
+        $ping = Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -TimeoutSeconds $TimeoutSeconds
+        $result.CanPing = $ping
+    } catch { }
+
+    try {
+        $winrm = Test-WSMan -ComputerName $ComputerName -ErrorAction Stop
+        $result.CanWinRM = $true
+    } catch { }
+
+    $result.IsReachable = $result.CanPing -or $result.CanWinRM
+    return $result
+}
+
+function Invoke-RemoteOperation {
+    param($ComputerName, $ScriptBlock, $OperationName, $Credential)
+
+    try {
+        [Logger]::Info("Starting $OperationName on $ComputerName")
+        $params = @{
+            ComputerName = $ComputerName
+            ScriptBlock = $ScriptBlock
+            ErrorAction = 'Stop'
+        }
+        if ($Credential) {
+            $params.Credential = $Credential
+        }
+        $result = Invoke-Command @params
+        [Logger]::Info("$OperationName completed successfully")
+        return @{
+            Success = $true
+            Data = $result
+            Message = "$OperationName completed successfully"
+        }
+    }
+    catch {
+        [Logger]::Error("$OperationName failed: $($_.Exception.Message)")
+        return @{
+            Success = $false
+            Data = $null
+            Message = "$OperationName failed: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Get-SystemInfoOptimized {
+    param($ComputerName)
+
+    $cimSession = $null
+    try {
+        $cimSession = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
+
+        # Batch multiple queries using the same session
+        $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
+        $cpuInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_Processor
+        $memInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_PhysicalMemory
+        $diskInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_LogicalDisk -Filter "DriveType=3"
+        $networkInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True"
+
+        return @{
+            OS = $osInfo
+            CPU = $cpuInfo
+            Memory = $memInfo
+            Disks = $diskInfo
+            Network = $networkInfo
+        }
+    }
+    finally {
+        if ($cimSession) {
+            Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Download-VerifiedFile {
+    param($Url, $OutputPath, $ExpectedHash = $null)
+
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $OutputPath -UseBasicParsing -ErrorAction Stop
+
+        if ($ExpectedHash) {
+            $actualHash = Get-FileHash -Path $OutputPath -Algorithm SHA256
+            if ($actualHash.Hash -ne $ExpectedHash) {
+                Remove-Item $OutputPath -Force
+                throw "File hash verification failed. Expected: $ExpectedHash, Actual: $($actualHash.Hash)"
+            }
+        }
+        return $true
+    }
+    catch {
+        [Logger]::Error("Download failed: $($_.Exception.Message)")
+        return $false
+    }
+}
+
+# Function to get machine IP/hostname
+function Get-LoggedInUserAndMachineInfo {
+    $hostname = $env:COMPUTERNAME
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $txtHostname.Text = "$hostname - $currentUser"
+}
+
+# Function to check connection status and update TextBox background
+function Update-ConnectionStatus {
+    param($hostnameOrIp)
+
+    # Validate and sanitize input
+    $sanitizedInput = [InputValidator]::SanitizeInput($hostnameOrIp)
+    if (-not [InputValidator]::IsValidHostnameOrIP($sanitizedInput)) {
+        $txtHostname.Background = [System.Windows.Media.Brushes]::Red
+        $terminalOutputBox.Text = "Invalid hostname or IP address format."
+        [Logger]::Warn("Invalid input provided: $hostnameOrIp")
+        return
+    }
+
+    try {
+        $connectivityTest = Test-RemoteConnectivity -ComputerName $sanitizedInput -TimeoutSeconds $Global:AppConfig.Network.DefaultTimeout
+
+        if ($connectivityTest.IsReachable) {
+            $txtHostname.Background = [System.Windows.Media.Brushes]::Green
+            $statusDetails = @()
+            if ($connectivityTest.CanPing) { $statusDetails += "Ping: OK" }
+            if ($connectivityTest.CanWinRM) { $statusDetails += "WinRM: OK" }
+            if ($connectivityTest.CanResolve) { $statusDetails += "DNS: OK" }
+            $terminalOutputBox.Text = "Connection to $sanitizedInput successful. ($($statusDetails -join ', '))"
+            [Logger]::Info("Successful connection test to $sanitizedInput")
+        } else {
+            $txtHostname.Background = [System.Windows.Media.Brushes]::DarkOrange
+            $terminalOutputBox.Text = "Connection to $sanitizedInput failed. Host may be unreachable or WinRM disabled."
+            [Logger]::Warn("Connection test failed for $sanitizedInput")
+        }
+    } catch {
+        $txtHostname.Background = [System.Windows.Media.Brushes]::Red
+        $terminalOutputBox.Text = "Error testing connection: $($_.Exception.Message)"
+        [Logger]::Error("Connection test error for ${sanitizedInput}: $($_.Exception.Message)")
+    }
+}
+
+# Helper function for validating hostname/IP input
+function Validate-Hostname {
+    param($hostname)
+    if ($hostname -eq "Enter Hostname/IP" -or $hostname -eq "" -or $hostname -eq $null) {
+        return $true  # Invalid
+    }
+    return -not [InputValidator]::IsValidHostnameOrIP($hostname)
+}
+
+# Ping Button Click Event
+$btnPing.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname/IP."
+        return
+    }
+
+    Update-ConnectionStatus $hostnameOrIp
+})
+
+# Get System Info Button Click Event
+$btnGetSystemInfo.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid machine name or IP."
+        return
+    }
+
+    try {
+        # Use optimized system info gathering
+        $systemData = Get-SystemInfoOptimized -ComputerName $remoteMachine
+
+        # Calculate uptime using improved datetime handling
+        $lastBootUpTime = Get-SafeDateTime -DateTimeValue $systemData.OS.LastBootUpTime
+        if ($lastBootUpTime) {
+            $currentTime = Get-Date
+            $uptime = $currentTime - $lastBootUpTime
+            $uptimeString = "{0:D2} days {1:D2} hrs {2:D2} mins {3:D2} secs" -f $uptime.Days, $uptime.Hours, $uptime.Minutes, $uptime.Seconds
+        } else {
+            $uptimeString = "Uptime data unavailable"
+        }
+
+        # Calculate memory more efficiently
+        $totalMemoryGB = [math]::round(($systemData.Memory | Measure-Object -Property Capacity -Sum).Sum / 1GB, 2)
+
+        # Format disk information
+        $diskOutput = ($systemData.Disks | ForEach-Object {
+            "$($_.DeviceID): Total: $([math]::round($_.Size / 1GB, 2)) GB Free: $([math]::round($_.FreeSpace / 1GB, 2)) GB"
+        }) -join "`r`n"
+
+        # Format network information
+        $ipAddress = ($systemData.Network.IPAddress | Where-Object { $_ -match '\.' } | Select-Object -First 1) -join ", "
+        $dnsServers = ($systemData.Network.DNSServerSearchOrder | Where-Object { $_ }) -join ", "
+
+        # Build output more efficiently
+        $systemInfo = @(
+            "System Information for ${remoteMachine}:",
+            "----------------------------------------",
+            "OS Information:",
+            "OS: $($systemData.OS.Caption)",
+            "Architecture: $($systemData.OS.OSArchitecture)",
+            "Machine Name: $($systemData.OS.CSName)",
+            "Current User: $($systemData.OS.UserName)",
+            "Uptime: $uptimeString",
+            "",
+            "Processor Information:",
+            "CPU: $($systemData.CPU.Name)",
+            "Cores: $($systemData.CPU.NumberOfCores)",
+            "Clock Speed: $($systemData.CPU.MaxClockSpeed) MHz",
+            "",
+            "Memory Information:",
+            "Total RAM: $totalMemoryGB GB",
+            "",
+            "Disk Information:",
+            $diskOutput,
+            "",
+            "Network Information:",
+            "IP Address: $ipAddress",
+            "DNS Servers: $dnsServers"
+        ) -join "`r`n"
+
+        $terminalOutputBox.Text = $systemInfo
+        [Logger]::Info("Retrieved system information for $remoteMachine")
+    } catch {
+        $errorMessage = "Error getting system information for ${remoteMachine}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# Resolve Button Event
+$btnResolve.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        if ([InputValidator]::IsValidIPv4($hostnameOrIp)) {
+            # If input is an IP address, try reverse lookup
+            $resolved = Resolve-DnsName -Name $hostnameOrIp -Type PTR -ErrorAction Stop
+            $hostname = $resolved.NameHost
+            $terminalOutputBox.Text = "Resolved IP address to hostname: $hostname"
+            [Logger]::Info("Successfully resolved IP $hostnameOrIp to hostname $hostname")
+        } elseif ([InputValidator]::IsValidHostname($hostnameOrIp)) {
+            # Otherwise, resolve hostname to IP
+            $resolved = Resolve-DnsName -Name $hostnameOrIp -ErrorAction Stop
+            $ipAddresses = $resolved | Where-Object { $_.QueryType -eq "A" -or $_.QueryType -eq "AAAA" } | Select-Object -ExpandProperty IPAddress
+
+            if ($ipAddresses) {
+                $terminalOutputBox.Text = "Resolved hostname '$hostnameOrIp' to IP address(es):`r`n" + ($ipAddresses -join "`r`n")
+                [Logger]::Info("Successfully resolved hostname $hostnameOrIp to IPs: $($ipAddresses -join ', ')")
+            } else {
+                $terminalOutputBox.Text = "No IP addresses found for '$hostnameOrIp'."
+                [Logger]::Warn("No IP addresses found for hostname $hostnameOrIp")
+            }
+        } else {
+            $terminalOutputBox.Text = "Invalid hostname or IP address format."
+            [Logger]::Warn("Invalid input format provided for resolution: $hostnameOrIp")
+        }
+    } catch {
+        $errorMessage = "Error resolving '$hostnameOrIp': $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# Open PowerShell Session Button Event
+$btnOpenPSSession.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Define the command to start a remote PowerShell session
+        $command = "Enter-PSSession -ComputerName '$hostnameOrIp' -ErrorAction Stop"
+
+        # Start a new PowerShell window with the specified command
+        Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $command
+
+        $terminalOutputBox.Text = "Successfully opened a remote PowerShell session with $hostnameOrIp in a new window."
+        [Logger]::Info("Opened PowerShell session to $hostnameOrIp")
+    } catch {
+        $errorMessage = "Error opening PowerShell session for ${hostnameOrIp}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# GPUpdate Button Click Event
+$btnGpUpdate.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        $result = Invoke-RemoteOperation -ComputerName $hostnameOrIp -ScriptBlock { gpupdate /force } -OperationName "GPUpdate"
+        if ($result.Success) {
+            $terminalOutputBox.Text = "Successfully ran GPUpdate on ${hostnameOrIp}."
+        } else {
+            $terminalOutputBox.Text = $result.Message
+        }
+    } catch {
+        $errorMessage = "Error running GPUpdate on ${hostnameOrIp}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# MSRA Button Click Event
+$btnMSRA.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Launch MSRA (Microsoft Remote Assistance) for the target machine
+        Start-Process "msra" -ArgumentList "/offerRA $hostnameOrIp"
+        $terminalOutputBox.Text = "Launching MSRA for $hostnameOrIp."
+        [Logger]::Info("Launched MSRA for $hostnameOrIp")
+    } catch {
+        $errorMessage = "Error launching MSRA for ${hostnameOrIp}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# RDC Button Click Event
+$btnRDC.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Launch Remote Desktop Connection (RDC)
+        Start-Process "mstsc" -ArgumentList "/v:$hostnameOrIp"
+        $terminalOutputBox.Text = "Launching RDC for $hostnameOrIp."
+        [Logger]::Info("Launched RDC for $hostnameOrIp")
+    } catch {
+        $errorMessage = "Error launching RDC for ${hostnameOrIp}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# Event Log Button Click Event
+$btnEventLog.Add_Click({
+    $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $hostnameOrIp) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Launch Event Viewer for the target machine
+        Start-Process "eventvwr.msc" -ArgumentList "/s:$hostnameOrIp"
+        $terminalOutputBox.Text = "Opening Event Log for $hostnameOrIp."
+        [Logger]::Info("Opened Event Log for $hostnameOrIp")
+    } catch {
+        $errorMessage = "Error opening Event Log for ${hostnameOrIp}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# IncidentIQ Button Click Event
+$btnIncident.Add_Click({
+    Start-Process "https://sidneycityschools.incidentiq.com/"  
+})
+
+# Get Installed Software Button Click Event
+$btnGetInstalledSoftware.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Get credentials for remote access
+        $credential = Get-Credential -Message "Enter credentials for $remoteMachine"
+        if (-not $credential) {
+            $terminalOutputBox.Text = "Operation cancelled: No credentials provided."
+            return
+        }
+
+        # Use the improved remote operation function
+        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -Credential $credential -OperationName "Get Installed Software" -ScriptBlock {
+            Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*, `
+                              HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, `
+                              HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+                              Select-Object DisplayName, DisplayVersion, InstallDate |
+                              Where-Object { $_.DisplayName -ne $null } |
+                              Sort-Object DisplayName
+        }
+
+        if ($result.Success -and $result.Data) {
+            # Format output more efficiently
+            $softwareList = @(
+                "Installed Software on ${remoteMachine}:",
+                "---------------------------------"
+            )
+            $softwareList += $result.Data | ForEach-Object {
+                "Name: $($_.DisplayName)",
+                "Version: $($_.DisplayVersion)",
+                "Installed On: $($_.InstallDate)",
+                "---------------------------------"
+            }
+            $terminalOutputBox.Text = $softwareList -join "`r`n"
+        } elseif ($result.Success) {
+            $terminalOutputBox.Text = "No installed software found on ${remoteMachine}."
+        } else {
+            $terminalOutputBox.Text = $result.Message
+        }
+    } catch {
+        $errorMessage = "Error retrieving installed software from ${remoteMachine}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# Get Up Time Button Click Event
+$btnGetUpTime.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        # Get OS information using optimized method
+        $cimSession = New-CimSession -ComputerName $remoteMachine -ErrorAction Stop
+        try {
+            $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
+
+            # Use improved datetime conversion
+            $lastBootUpTime = Get-SafeDateTime -DateTimeValue $osInfo.LastBootUpTime
+
+            if ($lastBootUpTime) {
+                $currentTime = Get-Date
+                $uptime = $currentTime - $lastBootUpTime
+                $uptimeString = "{0:D2} days {1:D2} hrs {2:D2} mins {3:D2} secs" -f $uptime.Days, $uptime.Hours, $uptime.Minutes, $uptime.Seconds
+                $terminalOutputBox.Text = "Uptime for ${remoteMachine}`r`n$uptimeString"
+                [Logger]::Info("Retrieved uptime for ${remoteMachine}: $uptimeString")
+            } else {
+                $terminalOutputBox.Text = "Could not retrieve or parse last boot up time for $remoteMachine."
+                [Logger]::Warn("Failed to parse LastBootUpTime for $remoteMachine")
+            }
+        }
+        finally {
+            Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
+        }
+    } catch {
+        $errorMessage = "Error retrieving uptime for ${remoteMachine}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    }
+})
+
+# Upgrade to Windows 11 Button Click Event
+$btnUpgradeWindows11.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    # Warning about security risks
+    $confirmResult = [System.Windows.MessageBox]::Show(
+        "WARNING: Windows 11 upgrade is a critical operation that will:$([Environment]::NewLine)" +
+        "- Download and execute software from the internet$([Environment]::NewLine)" +
+        "- Require system restart$([Environment]::NewLine)" +
+        "- May take several hours to complete$([Environment]::NewLine)$([Environment]::NewLine)" +
+        "Are you sure you want to proceed?",
+        "Windows 11 Upgrade Warning",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Warning
+    )
+
+    if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
+        $terminalOutputBox.Text = "Windows 11 upgrade cancelled by user."
+        return
+    }
+
+    # Show progress bar
+    $progressBar.Visibility = [System.Windows.Visibility]::Visible
+    $progressBar.Value = 0
+
+    # Prompt for credentials
+    $credential = Get-Credential -Message "Enter administrator credentials for $remoteMachine"
+    if (-not $credential) {
+        $terminalOutputBox.Text = "Upgrade cancelled: No credentials provided."
+        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
+        return
+    }
+
+    # Define the secure upgrade script block
+    $upgradeScriptBlock = {
+        param($remoteMachine, $credential, $appConfig)
+
+        try {
+            [Logger]::Info("Starting Windows 11 upgrade process for $remoteMachine")
+
+            # Check if already running Windows 11
+            $osInfo = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
+                Get-CimInstance -ClassName Win32_OperatingSystem
+            } -ErrorAction Stop
+
+            if ($osInfo.Caption -like "*Windows 11*") {
+                return @{
+                    Success = $true
+                    Message = "${remoteMachine} is already running Windows 11."
+                    AlreadyUpgraded = $true
+                }
+            }
+
+            # Comprehensive compatibility check
+            $compatibilityResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
+                $cpuInfo = Get-CimInstance -ClassName Win32_Processor
+                $memInfo = Get-CimInstance -ClassName Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+                $diskInfo = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3 AND DeviceID='C:'"
+                $tpmInfo = try { Get-CimInstance -Namespace root/CIMV2/Security/MicrosoftTpm -ClassName Win32_Tpm } catch { $null }
+                $biosInfo = Get-CimInstance -ClassName Win32_BIOS
+
+                $totalMemoryGB = [math]::round($memInfo.Sum / 1GB, 2)
+                $freeSpaceGB = [math]::round($diskInfo.FreeSpace / 1GB, 2)
+                $isUEFI = $env:FIRMWARE_TYPE -eq "UEFI"
+
+                $issues = @()
+                if ($cpuInfo.NumberOfCores -lt 2) { $issues += "Insufficient CPU cores ($($cpuInfo.NumberOfCores), minimum 2 required)" }
+                if ($totalMemoryGB -lt 4) { $issues += "Insufficient RAM ($totalMemoryGB GB, minimum 4 GB required)" }
+                if ($freeSpaceGB -lt 64) { $issues += "Insufficient free disk space ($freeSpaceGB GB, minimum 64 GB required)" }
+                if (-not $tpmInfo -or $tpmInfo.SpecVersion -lt "2.0") { $issues += "TPM 2.0 not detected or enabled" }
+                if (-not $isUEFI) { $issues += "UEFI boot mode not detected (Legacy BIOS not supported)" }
+
+                return @{
+                    IsCompatible = $issues.Count -eq 0
+                    Issues = $issues
+                    SystemInfo = @{
+                        CPU = $cpuInfo.Name
+                        Memory = "$totalMemoryGB GB"
+                        FreeSpace = "$freeSpaceGB GB"
+                        TPM = if ($tpmInfo) { $tpmInfo.SpecVersion } else { "Not detected" }
+                        Firmware = if ($isUEFI) { "UEFI" } else { "Legacy BIOS" }
+                    }
+                }
+            } -ErrorAction Stop
+
+            if (-not $compatibilityResult.IsCompatible) {
+                return @{
+                    Success = $false
+                    Message = "System compatibility check failed:`r`n" + ($compatibilityResult.Issues -join "`r`n")
+                    CompatibilityIssues = $compatibilityResult.Issues
+                }
+            }
+
+            # Download and verify the installation assistant
+            $downloadResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
+                param($url, $expectedHash)
+
+                $installPath = "$env:TEMP\Windows11InstallationAssistant.exe"
+                $logPath = "$env:TEMP\Windows11Upgrade.log"
+
+                try {
+                    # Download with progress tracking
+                    $webClient = New-Object System.Net.WebClient
+                    $webClient.DownloadFile($url, $installPath)
+
+                    # Verify file exists and has reasonable size
+                    $fileInfo = Get-Item $installPath
+                    if ($fileInfo.Length -lt 1MB) {
+                        throw "Downloaded file is too small ($($fileInfo.Length) bytes)"
+                    }
+
+                    # Hash verification (if hash provided)
+                    if ($expectedHash) {
+                        $actualHash = Get-FileHash -Path $installPath -Algorithm SHA256
+                        if ($actualHash.Hash -ne $expectedHash) {
+                            Remove-Item $installPath -Force
+                            throw "File hash verification failed"
+                        }
+                    }
+
+                    return @{
+                        Success = $true
+                        Path = $installPath
+                        Size = $fileInfo.Length
+                        Message = "Download completed successfully"
+                    }
+                } catch {
+                    return @{
+                        Success = $false
+                        Message = "Download failed: $($_.Exception.Message)"
+                    }
+                } finally {
+                    if ($webClient) { $webClient.Dispose() }
+                }
+            } -ArgumentList $appConfig.URLs.Windows11Installer, $appConfig.URLs.Windows11InstallerHash -ErrorAction Stop
+
+            if (-not $downloadResult.Success) {
+                return @{
+                    Success = $false
+                    Message = $downloadResult.Message
+                }
+            }
+
+            # Execute the upgrade with logging
+            $upgradeResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
+                param($installPath)
+
+                try {
+                    $logPath = "$env:TEMP\Windows11Upgrade.log"
+                    $arguments = @("/quietinstall", "/log", $logPath)
+
+                    $process = Start-Process -FilePath $installPath -ArgumentList $arguments -PassThru -Wait -ErrorAction Stop
+
+                    $logContent = if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "Log file not found" }
+
+                    return @{
+                        Success = $process.ExitCode -eq 0
+                        ExitCode = $process.ExitCode
+                        LogContent = $logContent
+                        Message = if ($process.ExitCode -eq 0) { "Upgrade initiated successfully" } else { "Upgrade failed with exit code $($process.ExitCode)" }
+                    }
+                } catch {
+                    return @{
+                        Success = $false
+                        Message = "Execution failed: $($_.Exception.Message)"
+                    }
+                }
+            } -ArgumentList $downloadResult.Path -ErrorAction Stop
+
+            return $upgradeResult
+
+        } catch {
+            [Logger]::Error("Windows 11 upgrade failed for ${remoteMachine}: $($_.Exception.Message)")
+            return @{
+                Success = $false
+                Message = "Critical error: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    # Execute upgrade asynchronously
+    $terminalOutputBox.Text = "Initiating Windows 11 upgrade process for ${remoteMachine}..."
+    $progressBar.Value = 10
+
+    try {
+        $result = & $upgradeScriptBlock $remoteMachine $credential $Global:AppConfig
+
+        $progressBar.Value = 100
+        if ($result.Success) {
+            if ($result.AlreadyUpgraded) {
+                $terminalOutputBox.Text = $result.Message
+            } else {
+                $terminalOutputBox.Text = "Windows 11 upgrade process completed for ${remoteMachine}.`r`n" +
+                                         "The system will restart automatically to complete the installation.`r`n" +
+                                         "This process may take several hours."
+            }
+            [Logger]::Info("Windows 11 upgrade completed for $remoteMachine")
+        } else {
+            $terminalOutputBox.Text = "Windows 11 upgrade failed for ${remoteMachine}:`r`n$($result.Message)"
+            [Logger]::Error("Windows 11 upgrade failed for ${remoteMachine}: $($result.Message)")
+        }
+    } catch {
+        $errorMessage = "Critical error during Windows 11 upgrade: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
+    } finally {
+        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
+    }
+})
+
+# Show the window
+$Window.ShowDialog()
+
+# Cleanup runspaces on window close
+$Window.Add_Closed({
+    if ($runspacePool) {
+        $runspacePool.Close()
+        $runspacePool.Dispose()
+    }
+})
