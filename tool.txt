@@ -64,7 +64,7 @@ $XAML = @"
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        
+
         <!-- Status Label -->
         <Label Name="lblStatus" Content="Enter IP or Hostname" Foreground="White" FontSize="14" HorizontalAlignment="Center" Grid.Row="0"/>
 
@@ -539,7 +539,7 @@ $btnEventLog.Add_Click({
 
 # IncidentIQ Button Click Event
 $btnIncident.Add_Click({
-    Start-Process "https://sidneycityschools.incidentiq.com/"  
+    Start-Process "https://sidneycityschools.incidentiq.com/"
 })
 
 # Get Installed Software Button Click Event
@@ -851,40 +851,393 @@ $btnUpgradeWindows11.Add_Click({
 # Fix MDT Error Button Click Event
 $btnFixMDT.Add_Click({
     try {
-        $terminalOutputBox.Text = "Launching MDT/WDT Cleanup Tool...`r`n`r`nThis will fix the LiteTouch.wsf startup error.`r`nThe script requires Administrator privileges.`r`n"
-        [Logger]::Info("Launching MDT cleanup tool")
+        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
 
-        # Get the script path (same directory as this tool)
-        $scriptPath = Join-Path $PSScriptRoot "Fix-MDT-Startup-Error.ps1"
-
-        if (-not (Test-Path $scriptPath)) {
-            $terminalOutputBox.Text = "ERROR: MDT cleanup script not found at:`r`n$scriptPath`r`n`r`nPlease ensure Fix-MDT-Startup-Error.ps1 is in the same directory as this tool."
-            [Logger]::Error("MDT cleanup script not found at $scriptPath")
+        if (Validate-Hostname $remoteMachine) {
+            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
             return
         }
 
-        # Launch PowerShell as Administrator with the cleanup script
-        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $processInfo.FileName = "powershell.exe"
-        $processInfo.Arguments = "-ExecutionPolicy Bypass -NoProfile -File `"$scriptPath`""
-        $processInfo.Verb = "RunAs"  # Request administrator elevation
-        $processInfo.UseShellExecute = $true
-        $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        $terminalOutputBox.Text = "Starting MDT/WDT Cleanup on ${remoteMachine}...`r`n`r`nThis will fix the LiteTouch.wsf startup error by removing MDT artifacts.`r`n"
+        [Logger]::Info("Starting embedded MDT cleanup on $remoteMachine")
 
-        $process = [System.Diagnostics.Process]::Start($processInfo)
+        # Prompt for credentials
+        $credential = Get-Credential -Message "Enter administrator credentials for $remoteMachine"
+        if (-not $credential) {
+            $terminalOutputBox.Text = "Operation cancelled: No credentials provided."
+            return
+        }
 
-        if ($process) {
-            $terminalOutputBox.Text += "`r`nMDT Cleanup Tool launched successfully.`r`n`r`nPlease complete the cleanup in the new PowerShell window.`r`nFollow the prompts and restart the computer when finished."
-            [Logger]::Info("MDT cleanup tool launched successfully")
-        } else {
-            $terminalOutputBox.Text = "Failed to launch MDT cleanup tool.`r`nEither elevation was cancelled or an error occurred."
-            [Logger]::Error("Failed to launch MDT cleanup tool")
+        $progressBar.Visibility = [System.Windows.Visibility]::Visible
+        $progressBar.Value = 10
+
+        # Define the cleanup script block to run on remote machine
+        $cleanupScriptBlock = {
+            $issuesFound = 0
+            $issuesFixed = 0
+            $output = @()
+
+            # First, let's search specific high-probability locations
+            $output += "=== TARGETED DIAGNOSTIC SCAN ==="
+            $output += "Checking common startup locations..."
+            $output += ""
+
+            # Check Winlogon keys specifically (common for persistent startup)
+            $output += "[DIAGNOSTIC] Checking Winlogon Registry Keys..."
+            $winlogonKeys = @(
+                "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",
+                "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+            )
+
+            foreach ($wlKey in $winlogonKeys) {
+                if (Test-Path $wlKey) {
+                    $output += "  Path: $wlKey"
+                    $props = Get-ItemProperty -Path $wlKey -ErrorAction SilentlyContinue
+                    $checkProps = @("Shell", "Userinit", "VmApplet", "System", "TaskMan", "UIHost", "LogonScript")
+                    foreach ($propName in $checkProps) {
+                        if ($props.$propName) {
+                            $output += "    $propName = $($props.$propName)"
+                            if ($props.$propName -match "LiteTouch|MININT") {
+                                $output += "    *** MATCH FOUND ***"
+                                $issuesFound++
+                            }
+                        }
+                    }
+                }
+            }
+            $output += ""
+
+            # Check for WMI Event Consumers (advanced startup method)
+            try {
+                $wmiConsumers = Get-WmiObject -Namespace "root\subscription" -Class CommandLineEventConsumer -ErrorAction SilentlyContinue
+                foreach ($consumer in $wmiConsumers) {
+                    if ($consumer.CommandLineTemplate -match "LiteTouch|MININT") {
+                        $output += "[FOUND] WMI Event Consumer: $($consumer.Name)"
+                        $output += "  Command: $($consumer.CommandLineTemplate)"
+                        $issuesFound++
+                    }
+                }
+            } catch { }
+
+            # Check Startup Folders and list ALL files
+            $output += "[DIAGNOSTIC] Checking Startup Folders..."
+            $startupDirs = @(
+                "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup",
+                "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+                "$env:ALLUSERSPROFILE\Microsoft\Windows\Start Menu\Programs\StartUp"
+            )
+
+            foreach ($dir in $startupDirs) {
+                if (Test-Path $dir) {
+                    $output += "  Folder: $dir"
+                    $items = Get-ChildItem -Path $dir -ErrorAction SilentlyContinue
+                    if ($items) {
+                        foreach ($item in $items) {
+                            $output += "    - $($item.Name)"
+
+                            # Check if filename contains MDT keywords
+                            $filenameMatch = $item.Name -match "LiteTouch|MININT|MDT"
+
+                            if ($item.Extension -eq ".lnk") {
+                                try {
+                                    $shell = New-Object -ComObject WScript.Shell
+                                    $shortcut = $shell.CreateShortcut($item.FullName)
+                                    $output += "      Target: $($shortcut.TargetPath)"
+                                    $output += "      Arguments: $($shortcut.Arguments)"
+
+                                    # Check target, arguments, or filename
+                                    if ($shortcut.TargetPath -match "LiteTouch|MININT|MDT" -or
+                                        $shortcut.Arguments -match "LiteTouch|MININT|MDT" -or
+                                        $filenameMatch) {
+                                        $output += "      *** MATCH FOUND - REMOVING ***"
+                                        $issuesFound++
+                                        Remove-Item -Path $item.FullName -Force -ErrorAction Stop
+                                        $output += "      [OK] Removed shortcut successfully"
+                                        $issuesFixed++
+                                    }
+                                }
+                                catch {
+                                    $output += "      [FAIL] Failed to remove shortcut: $($_.Exception.Message)"
+                                }
+                            } elseif ($filenameMatch) {
+                                # Non-shortcut file with MDT in name
+                                $output += "      *** MATCH FOUND - REMOVING ***"
+                                $issuesFound++
+                                try {
+                                    Remove-Item -Path $item.FullName -Force -ErrorAction Stop
+                                    $output += "      [OK] Removed file successfully"
+                                    $issuesFixed++
+                                }
+                                catch {
+                                    $output += "      [FAIL] Failed to remove: $($_.Exception.Message)"
+                                }
+                            }
+                        }
+                    } else {
+                        $output += "    (empty)"
+                    }
+                } else {
+                    $output += "  Folder not found: $dir"
+                }
+            }
+            $output += ""
+
+            # Check running processes
+            $output += "[DIAGNOSTIC] Checking Running Processes..."
+            $ltProcesses = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "LiteTouch|MININT" }
+            if ($ltProcesses) {
+                foreach ($proc in $ltProcesses) {
+                    $output += "  ACTIVE PROCESS FOUND:"
+                    $output += "    ProcessId: $($proc.ProcessId)"
+                    $output += "    Name: $($proc.Name)"
+                    $output += "    CommandLine: $($proc.CommandLine)"
+                    $output += "    ParentProcessId: $($proc.ParentProcessId)"
+
+                    $parent = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq $proc.ParentProcessId }
+                    if ($parent) {
+                        $output += "    Parent Process: $($parent.Name) (PID $($parent.ProcessId))"
+                    }
+                    $output += "    *** LITETOUCH IS RUNNING ***"
+                    $issuesFound++
+                }
+            } else {
+                $output += "  No LiteTouch processes currently running"
+            }
+            $output += ""
+
+            # [1] Check and Remove Registry Run Entries
+            $output += "[DIAGNOSTIC] Checking ALL Registry Run Keys..."
+            $registryPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunServicesOnce",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunServicesOnce",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunServices",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunServices",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
+            "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components"
+        )
+
+        # Also check all user hives
+        $userHives = Get-ChildItem "Registry::HKEY_USERS" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'S-1-5-21' }
+        foreach ($hive in $userHives) {
+            $registryPaths += "$($hive.PSPath)\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            $registryPaths += "$($hive.PSPath)\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
+        }
+
+        $mdtPatterns = @("LiteTouch", "MININT", "DeploymentShare", "BDD", "MDT")
+
+        foreach ($regPath in $registryPaths) {
+            if (Test-Path $regPath) {
+                try {
+                    $properties = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+                    if ($properties) {
+                        $hasValues = $false
+                        foreach ($prop in $properties.PSObject.Properties) {
+                            if ($prop.Name -match "^PS") { continue }
+
+                            if (-not $hasValues) {
+                                $output += "  Path: $regPath"
+                                $hasValues = $true
+                            }
+
+                            $output += "    $($prop.Name) = $($prop.Value)"
+
+                            $matched = $false
+                            foreach ($pattern in $mdtPatterns) {
+                                if ($prop.Value -match $pattern) {
+                                    $matched = $true
+                                    break
+                                }
+                            }
+
+                            if ($matched) {
+                                $output += "    *** MATCH FOUND - WILL REMOVE ***"
+                                $issuesFound++
+                                try {
+                                    Remove-ItemProperty -Path $regPath -Name $prop.Name -Force -ErrorAction Stop
+                                    $output += "    [OK] Removed successfully"
+                                    $issuesFixed++
+                                }
+                                catch {
+                                    $output += "    [FAIL] Failed to remove"
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+        $output += ""
+
+        # [2] Remove Auto-Logon Settings
+        $winlogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+
+        try {
+            $autoLogonEnabled = (Get-ItemProperty -Path $winlogonPath -Name "AutoAdminLogon" -ErrorAction SilentlyContinue).AutoAdminLogon
+
+            if ($autoLogonEnabled -eq "1") {
+                $issuesFound++
+                $defaultUser = (Get-ItemProperty -Path $winlogonPath -Name "DefaultUserName" -ErrorAction SilentlyContinue).DefaultUserName
+                $defaultDomain = (Get-ItemProperty -Path $winlogonPath -Name "DefaultDomainName" -ErrorAction SilentlyContinue).DefaultDomainName
+
+                try {
+                    # Disable auto-logon
+                    Set-ItemProperty -Path $winlogonPath -Name "AutoAdminLogon" -Value "0" -Force -ErrorAction Stop
+
+                    # Remove stored password (security risk!)
+                    Remove-ItemProperty -Path $winlogonPath -Name "DefaultPassword" -ErrorAction SilentlyContinue
+
+                    # Remove auto-logon count
+                    Remove-ItemProperty -Path $winlogonPath -Name "AutoLogonCount" -ErrorAction SilentlyContinue
+
+                    $output += "  [OK] Disabled auto-logon for: $defaultDomain\$defaultUser"
+                    $issuesFixed++
+                }
+                catch {
+                    $output += "  [FAIL] Failed to disable auto-logon"
+                }
+            }
+        }
+        catch { }
+
+        # [3] Remove Scheduled Tasks
+        try {
+            $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue
+            $mdtTasks = $allTasks | Where-Object {
+                $_.TaskName -match "LiteTouch|MDT|BDD|DeploymentShare" -or
+                ($_.Actions -and $_.Actions.Execute -match "LiteTouch|MININT")
+            }
+
+            foreach ($task in $mdtTasks) {
+                $issuesFound++
+                try {
+                    Unregister-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -Confirm:$false -ErrorAction Stop
+                    $output += "  [OK] Removed task: $($task.TaskPath)$($task.TaskName)"
+                    $issuesFixed++
+                }
+                catch {
+                    $output += "  [FAIL] Failed to remove task: $($task.TaskName)"
+                }
+            }
+        }
+        catch { }
+
+        # [4] Remove Directories
+        $criticalPaths = @("C:\MININT", "C:\DeploymentShare", "C:\_SMSTaskSequence")
+
+        foreach ($path in $criticalPaths) {
+            if (Test-Path $path) {
+                $issuesFound++
+                try {
+                    # Take ownership and remove
+                    $null = takeown /F $path /R /D Y 2>&1
+                    $null = icacls $path /grant administrators:F /T 2>&1
+                    Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+                    $output += "  [OK] Removed directory: $path"
+                    $issuesFixed++
+                }
+                catch {
+                    $output += "  [FAIL] Failed to remove: $path"
+                }
+            }
+        }
+
+        # [5] Startup Shortcuts already handled in diagnostic section above
+
+        # [6] Check Group Policy Startup Scripts
+        $output += ""
+        $output += "[CHECKING] Group Policy startup scripts..."
+
+        $gpStartupPaths = @(
+            "C:\Windows\System32\GroupPolicy\Machine\Scripts\Startup",
+            "C:\Windows\System32\GroupPolicy\User\Scripts\Logon",
+            "$env:ALLUSERSPROFILE\Microsoft\Windows\Start Menu\Programs\StartUp"
+        )
+
+        foreach ($gpPath in $gpStartupPaths) {
+            if (Test-Path $gpPath) {
+                $scripts = Get-ChildItem -Path $gpPath -Include *.bat,*.cmd,*.vbs,*.ps1,*.wsf -Recurse -ErrorAction SilentlyContinue
+                foreach ($script in $scripts) {
+                    $content = Get-Content $script.FullName -Raw -ErrorAction SilentlyContinue
+                    if ($content -match "LiteTouch|MININT|MDT") {
+                        $issuesFound++
+                        try {
+                            Remove-Item -Path $script.FullName -Force -ErrorAction Stop
+                            $output += "  [OK] Removed GP script: $($script.FullName)"
+                            $issuesFixed++
+                        }
+                        catch {
+                            $output += "  [FAIL] Failed to remove: $($script.FullName)"
+                        }
+                    }
+                }
+            }
+        }
+
+        # Return results
+        return @{
+            IssuesFound = $issuesFound
+            IssuesFixed = $issuesFixed
+            Output = $output
+        }
+        }
+
+        # Execute cleanup on remote machine
+        $terminalOutputBox.Text += "Running comprehensive MDT cleanup...`r`n"
+        $progressBar.Value = 20
+
+        try {
+            $result = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock $cleanupScriptBlock -ErrorAction Stop
+
+            $progressBar.Value = 100
+
+            # Display results
+            $terminalOutputBox.Text += "`r`n" + ("=" * 50) + "`r`n"
+            $terminalOutputBox.Text += "CLEANUP COMPLETE`r`n"
+            $terminalOutputBox.Text += ("=" * 50) + "`r`n`r`n"
+            $terminalOutputBox.Text += "Issues Found: $($result.IssuesFound)`r`n"
+            $terminalOutputBox.Text += "Issues Fixed: $($result.IssuesFixed)`r`n`r`n"
+
+            if ($result.Output.Count -gt 0) {
+                $terminalOutputBox.Text += "Details:`r`n"
+                $terminalOutputBox.Text += ($result.Output -join "`r`n") + "`r`n`r`n"
+            }
+
+            if ($result.IssuesFound -eq 0) {
+                $terminalOutputBox.Text += "No MDT artifacts found. System is clean.`r`n"
+            }
+            elseif ($result.IssuesFixed -gt 0) {
+                $terminalOutputBox.Text += "SUCCESS: MDT artifacts have been removed.`r`n"
+                $terminalOutputBox.Text += "`r`nNEXT STEPS:`r`n"
+                $terminalOutputBox.Text += "  1. Restart the computer`r`n"
+                $terminalOutputBox.Text += "  2. Verify the error no longer appears`r`n"
+            }
+            else {
+                $terminalOutputBox.Text += "WARNING: Issues were found but could not be fixed.`r`n"
+                $terminalOutputBox.Text += "Check that you have administrator credentials.`r`n"
+            }
+
+            [Logger]::Info("MDT cleanup completed on ${remoteMachine}: $($result.IssuesFixed)/$($result.IssuesFound) fixed")
+        }
+        catch {
+            $terminalOutputBox.Text = "Error executing remote cleanup: $($_.Exception.Message)`r`n`r`nMake sure:`r`n- WinRM is enabled on $remoteMachine`r`n- You have administrator credentials`r`n- Firewall allows remote administration"
+            [Logger]::Error("Remote MDT cleanup failed for ${remoteMachine}: $($_.Exception.Message)")
         }
 
     } catch {
-        $errorMessage = "Error launching MDT cleanup tool: $($_.Exception.Message)"
+        $errorMessage = "Error during MDT cleanup: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
+    }
+    finally {
+        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
     }
 })
 
@@ -898,3 +1251,4 @@ $Window.Add_Closed({
         $runspacePool.Dispose()
     }
 })
+
