@@ -87,6 +87,7 @@ $XAML = @"
             <Button Name="btnEventLog" Content="Open Event Log" Width="180" Margin="5"/>
             <Button Name="btnIncident" Content="Open IncidentIQ" Width="150" Margin="5"/>
             <Button Name="btnUpgradeWindows11" Content="Upgrade to Windows 11" Width="180" Margin="5"/>
+            <Button Name="btnFixMDT" Content="Fix MDT Error" Width="180" Margin="5"/>
         </WrapPanel>
 
         <!-- Progress Bar -->
@@ -118,6 +119,7 @@ $btnIncident = $Window.FindName("btnIncident")
 $btnGetInstalledSoftware = $Window.FindName("btnGetInstalledSoftware")
 $btnGetUpTime = $Window.FindName("btnGetUpTime")
 $btnUpgradeWindows11 = $Window.FindName("btnUpgradeWindows11")
+$btnFixMDT = $Window.FindName("btnFixMDT")
 $progressBar = $Window.FindName("progressBar")
 
 # Utility Functions
@@ -843,6 +845,46 @@ $btnUpgradeWindows11.Add_Click({
         [Logger]::Error($errorMessage)
     } finally {
         $progressBar.Visibility = [System.Windows.Visibility]::Hidden
+    }
+})
+
+# Fix MDT Error Button Click Event
+$btnFixMDT.Add_Click({
+    try {
+        $terminalOutputBox.Text = "Launching MDT/WDT Cleanup Tool...`r`n`r`nThis will fix the LiteTouch.wsf startup error.`r`nThe script requires Administrator privileges.`r`n"
+        [Logger]::Info("Launching MDT cleanup tool")
+
+        # Get the script path (same directory as this tool)
+        $scriptPath = Join-Path $PSScriptRoot "Fix-MDT-Startup-Error.ps1"
+
+        if (-not (Test-Path $scriptPath)) {
+            $terminalOutputBox.Text = "ERROR: MDT cleanup script not found at:`r`n$scriptPath`r`n`r`nPlease ensure Fix-MDT-Startup-Error.ps1 is in the same directory as this tool."
+            [Logger]::Error("MDT cleanup script not found at $scriptPath")
+            return
+        }
+
+        # Launch PowerShell as Administrator with the cleanup script
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = "powershell.exe"
+        $processInfo.Arguments = "-ExecutionPolicy Bypass -NoProfile -File `"$scriptPath`""
+        $processInfo.Verb = "RunAs"  # Request administrator elevation
+        $processInfo.UseShellExecute = $true
+        $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+
+        $process = [System.Diagnostics.Process]::Start($processInfo)
+
+        if ($process) {
+            $terminalOutputBox.Text += "`r`nMDT Cleanup Tool launched successfully.`r`n`r`nPlease complete the cleanup in the new PowerShell window.`r`nFollow the prompts and restart the computer when finished."
+            [Logger]::Info("MDT cleanup tool launched successfully")
+        } else {
+            $terminalOutputBox.Text = "Failed to launch MDT cleanup tool.`r`nEither elevation was cancelled or an error occurred."
+            [Logger]::Error("Failed to launch MDT cleanup tool")
+        }
+
+    } catch {
+        $errorMessage = "Error launching MDT cleanup tool: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
     }
 })
 
