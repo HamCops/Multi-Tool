@@ -2,6 +2,7 @@
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName Microsoft.VisualBasic
 
 # Security and Utility Classes
 class InputValidator {
@@ -88,15 +89,10 @@ $XAML = @"
             <Button Name="btnIncident" Content="Open IncidentIQ" Width="150" Margin="5"/>
             <Button Name="btnUpgradeWindows11" Content="Upgrade to Windows 11" Width="180" Margin="5"/>
             <Button Name="btnFixMDT" Content="Fix MDT Error" Width="180" Margin="5"/>
-            <Button Name="btnShowCurrentUser" Content="Show Current User" Width="180" Margin="5"/>
-            <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Width="180" Margin="5"/>
             <Button Name="btnClearDNS" Content="Clear DNS Cache" Width="180" Margin="5"/>
             <Button Name="btnLogoffUser" Content="Logoff User" Width="180" Margin="5"/>
-            <Button Name="btnShutdown" Content="Remote Shutdown" Width="180" Margin="5"/>
-            <Button Name="btnGetComputerInfo" Content="Computer AD Info" Width="180" Margin="5"/>
-            <Button Name="btnFirewallStatus" Content="Firewall Status" Width="180" Margin="5"/>
+            <Button Name="btnRenameComputer" Content="Rename Computer" Width="180" Margin="5"/>
             <Button Name="btnBitLockerStatus" Content="BitLocker Status" Width="180" Margin="5"/>
-            <Button Name="btnDefenderStatus" Content="Defender Status" Width="180" Margin="5"/>
         </WrapPanel>
 
         <!-- Progress Bar -->
@@ -129,15 +125,10 @@ $btnGetInstalledSoftware = $Window.FindName("btnGetInstalledSoftware")
 $btnGetUpTime = $Window.FindName("btnGetUpTime")
 $btnUpgradeWindows11 = $Window.FindName("btnUpgradeWindows11")
 $btnFixMDT = $Window.FindName("btnFixMDT")
-$btnShowCurrentUser = $Window.FindName("btnShowCurrentUser")
-$btnClearPrintQueue = $Window.FindName("btnClearPrintQueue")
 $btnClearDNS = $Window.FindName("btnClearDNS")
 $btnLogoffUser = $Window.FindName("btnLogoffUser")
-$btnShutdown = $Window.FindName("btnShutdown")
-$btnGetComputerInfo = $Window.FindName("btnGetComputerInfo")
-$btnFirewallStatus = $Window.FindName("btnFirewallStatus")
+$btnRenameComputer = $Window.FindName("btnRenameComputer")
 $btnBitLockerStatus = $Window.FindName("btnBitLockerStatus")
-$btnDefenderStatus = $Window.FindName("btnDefenderStatus")
 $progressBar = $Window.FindName("progressBar")
 
 # Utility Functions
@@ -1259,168 +1250,6 @@ $btnFixMDT.Add_Click({
     }
 })
 
-# Show Current User Button Click Event
-$btnShowCurrentUser.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        [Logger]::Info("Querying current user on $remoteMachine")
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
-            $currentUser = $computerSystem.UserName
-
-            # Get session information using quser
-            $quserOutput = quser 2>$null
-
-            # Parse quser output to get session details
-            $sessionInfo = ""
-            if ($quserOutput) {
-                $sessionInfo = $quserOutput | Out-String
-            }
-
-            # Get logon time from Win32_LogonSession
-            try {
-                $logonSessions = Get-CimInstance -ClassName Win32_LogonSession | Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 }
-                $latestLogon = $logonSessions | Sort-Object StartTime -Descending | Select-Object -First 1
-
-                if ($latestLogon) {
-                    $logonTime = [Management.ManagementDateTimeConverter]::ToDateTime($latestLogon.StartTime)
-                    $duration = (Get-Date) - $logonTime
-                    $sessionDuration = "{0:D2}h {1:D2}m" -f $duration.Hours, $duration.Minutes
-                } else {
-                    $sessionDuration = "Unknown"
-                }
-            } catch {
-                $sessionDuration = "Unknown"
-            }
-
-            $output = @(
-                "Current User Information:",
-                "=" * 50,
-                "Logged In User: $(if ($currentUser) { $currentUser } else { 'No user logged in' })",
-                "Session Duration: $sessionDuration",
-                "",
-                "Session Details:",
-                "-" * 50,
-                $sessionInfo
-            ) -join "`r`n"
-
-            return $output
-        } -OperationName "Get Current User"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error querying current user on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Clear Print Queue Button Click Event
-$btnClearPrintQueue.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        $confirmResult = [System.Windows.MessageBox]::Show(
-            "This will clear all print jobs on $remoteMachine and restart the Print Spooler service.`r`n`r`nContinue?",
-            "Clear Print Queue",
-            [System.Windows.MessageBoxButton]::YesNo,
-            [System.Windows.MessageBoxImage]::Warning
-        )
-
-        if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
-            $terminalOutputBox.Text = "Print queue clear operation cancelled."
-            return
-        }
-
-        [Logger]::Info("Clearing print queue on $remoteMachine")
-        $terminalOutputBox.Text = "Clearing print queue on ${remoteMachine}...`r`nPlease wait..."
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            $output = @()
-
-            # Stop the Print Spooler service
-            $output += "Stopping Print Spooler service..."
-            Stop-Service -Name Spooler -Force -ErrorAction Stop
-            Start-Sleep -Seconds 2
-
-            # Clear the spool folder
-            $spoolPath = "$env:SystemRoot\System32\spool\PRINTERS"
-            if (Test-Path $spoolPath) {
-                $files = Get-ChildItem -Path $spoolPath -File
-                $fileCount = $files.Count
-
-                if ($fileCount -gt 0) {
-                    $output += "Removing $fileCount print job file(s) from spool folder..."
-                    $files | Remove-Item -Force -ErrorAction SilentlyContinue
-                } else {
-                    $output += "No print job files found in spool folder."
-                }
-            }
-
-            # Clear print jobs using PowerShell cmdlet
-            try {
-                $printers = Get-Printer -ErrorAction SilentlyContinue
-                $totalJobsCleared = 0
-
-                foreach ($printer in $printers) {
-                    $jobs = Get-PrintJob -PrinterName $printer.Name -ErrorAction SilentlyContinue
-                    if ($jobs) {
-                        $jobCount = $jobs.Count
-                        $totalJobsCleared += $jobCount
-                        $jobs | Remove-PrintJob -ErrorAction SilentlyContinue
-                    }
-                }
-
-                if ($totalJobsCleared -gt 0) {
-                    $output += "Cleared $totalJobsCleared queued print job(s)."
-                }
-            } catch {
-                $output += "Note: Could not query/clear printer queues via cmdlet."
-            }
-
-            # Start the Print Spooler service
-            $output += "Starting Print Spooler service..."
-            Start-Service -Name Spooler -ErrorAction Stop
-            Start-Sleep -Seconds 2
-
-            $spoolerStatus = (Get-Service -Name Spooler).Status
-            $output += "Print Spooler service status: $spoolerStatus"
-            $output += ""
-            $output += "Print queue clear operation completed successfully!"
-
-            return $output -join "`r`n"
-        } -OperationName "Clear Print Queue"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error clearing print queue on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
 # Clear DNS Cache Button Click Event
 $btnClearDNS.Add_Click({
     try {
@@ -1534,8 +1363,8 @@ $btnLogoffUser.Add_Click({
     }
 })
 
-# Remote Shutdown Button Click Event
-$btnShutdown.Add_Click({
+# Rename Computer Button Click Event
+$btnRenameComputer.Add_Click({
     try {
         $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
 
@@ -1544,167 +1373,103 @@ $btnShutdown.Add_Click({
             return
         }
 
+        # Prompt for new name
+        $newName = [Microsoft.VisualBasic.Interaction]::InputBox(
+            "Enter new computer name (15 chars max, letters/numbers/hyphens only):",
+            "Rename Computer",
+            ""
+        )
+
+        if ([string]::IsNullOrWhiteSpace($newName)) {
+            $terminalOutputBox.Text = "Operation cancelled."
+            return
+        }
+
+        # Validate new name
+        $newName = $newName.Trim().ToUpper()
+        if ($newName.Length -gt 15 -or $newName -notmatch '^[a-zA-Z0-9\-]+$') {
+            $terminalOutputBox.Text = "ERROR: Invalid computer name. Must be 15 characters or less, alphanumeric and hyphens only."
+            return
+        }
+
+        # Confirm action
         $confirmResult = [System.Windows.MessageBox]::Show(
-            "This will SHUT DOWN $remoteMachine immediately.`r`n`r`nThe computer will power off and any unsaved work will be lost.`r`n`r`nAre you sure you want to continue?",
-            "Confirm Shutdown",
+            "This will rename '$remoteMachine' to '$newName' and restart the computer.`r`n`r`nAre you sure?",
+            "Confirm Computer Rename",
             [System.Windows.MessageBoxButton]::YesNo,
-            [System.Windows.MessageBoxImage]::Stop
+            [System.Windows.MessageBoxImage]::Warning
         )
 
         if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
-            $terminalOutputBox.Text = "Shutdown operation cancelled."
+            $terminalOutputBox.Text = "Rename operation cancelled."
             return
         }
 
-        [Logger]::Info("Initiating shutdown on $remoteMachine")
-        $terminalOutputBox.Text = "Initiating shutdown on ${remoteMachine}..."
-
-        try {
-            Stop-Computer -ComputerName $remoteMachine -Force -ErrorAction Stop
-            $terminalOutputBox.Text = @(
-                "Shutdown Command Sent Successfully",
-                "=" * 50,
-                "Computer: $remoteMachine",
-                "Action: Shutdown",
-                "Status: Command executed successfully",
-                "",
-                "The remote computer should shut down within a few seconds."
-            ) -join "`r`n"
-            [Logger]::Info("Shutdown command sent successfully to $remoteMachine")
-        }
-        catch {
-            $terminalOutputBox.Text = "ERROR: Failed to shutdown $remoteMachine`r`n$($_.Exception.Message)"
-            [Logger]::Error("Shutdown failed for ${remoteMachine}: $($_.Exception.Message)")
-        }
-    }
-    catch {
-        $errorMessage = "Error during shutdown operation for ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Computer AD Info Button Click Event
-$btnGetComputerInfo.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        # Get credentials
+        $credential = Get-Credential -Message "Enter domain admin credentials for $remoteMachine"
+        if (-not $credential) {
+            $terminalOutputBox.Text = "Operation cancelled: No credentials provided."
             return
         }
 
-        [Logger]::Info("Querying Active Directory computer information for $remoteMachine")
-        $terminalOutputBox.Text = "Querying Active Directory information for ${remoteMachine}..."
+        [Logger]::Info("Renaming computer $remoteMachine to $newName")
+        $terminalOutputBox.Text = "Renaming computer from '$remoteMachine' to '$newName'...`r`n"
 
-        try {
-            $computerInfo = Get-ADComputer -Identity $remoteMachine -Properties * -ErrorAction Stop
+        # Perform rename
+        $result = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
+            param($newName, $cred)
 
-            $output = @(
-                "Active Directory Computer Information:",
-                "=" * 50,
-                "Computer Name: $($computerInfo.Name)",
-                "DNS Hostname: $($computerInfo.DNSHostName)",
-                "Distinguished Name: $($computerInfo.DistinguishedName)",
-                "",
-                "Operating System:",
-                "  OS: $($computerInfo.OperatingSystem)",
-                "  Version: $($computerInfo.OperatingSystemVersion)",
-                "  Service Pack: $($computerInfo.OperatingSystemServicePack)",
-                "",
-                "Account Information:",
-                "  Enabled: $($computerInfo.Enabled)",
-                "  Created: $($computerInfo.Created)",
-                "  Modified: $($computerInfo.Modified)",
-                "  Last Logon: $($computerInfo.LastLogonDate)",
-                "  Password Last Set: $($computerInfo.PasswordLastSet)",
-                "",
-                "Location:",
-                "  Organizational Unit: $($computerInfo.DistinguishedName -replace '^CN=[^,]+,','')",
-                "  Description: $($computerInfo.Description)",
-                "  Location: $($computerInfo.Location)",
-                "",
-                "Security:",
-                "  SID: $($computerInfo.SID)"
-            ) -join "`r`n"
+            try {
+                # Check if domain-joined
+                $cs = Get-WmiObject Win32_ComputerSystem
+                $isDomain = $cs.PartOfDomain
 
-            $terminalOutputBox.Text = $output
-            [Logger]::Info("Successfully retrieved AD info for $remoteMachine")
-        }
-        catch {
-            if ($_.Exception.Message -match "Cannot find an object") {
-                $terminalOutputBox.Text = "ERROR: Computer account '$remoteMachine' not found in Active Directory.`r`n`r`nPlease verify:`r`n- Computer name is correct`r`n- Computer is joined to the domain`r`n- You have permission to query AD"
+                if ($isDomain) {
+                    # Domain rename (requires domain admin rights)
+                    Rename-Computer -NewName $newName -DomainCredential $cred -Force -PassThru -ErrorAction Stop
+                } else {
+                    # Workgroup rename
+                    Rename-Computer -NewName $newName -Force -PassThru -ErrorAction Stop
+                }
+
+                return @{
+                    Success = $true
+                    OldName = $cs.Name
+                    NewName = $newName
+                    Domain = $cs.Domain
+                    IsDomain = $isDomain
+                }
             }
-            else {
-                $terminalOutputBox.Text = "ERROR: Failed to query Active Directory`r`n$($_.Exception.Message)"
+            catch {
+                return @{
+                    Success = $false
+                    Error = $_.Exception.Message
+                }
             }
-            [Logger]::Error("AD query failed for ${remoteMachine}: $($_.Exception.Message)")
-        }
-    }
-    catch {
-        $errorMessage = "Error querying AD computer info for ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Firewall Status Button Click Event
-$btnFirewallStatus.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        [Logger]::Info("Querying Windows Firewall status on $remoteMachine")
-        $terminalOutputBox.Text = "Querying Windows Firewall status on ${remoteMachine}..."
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction
-
-            $output = @(
-                "Windows Firewall Status:",
-                "=" * 50
-            )
-
-            foreach ($profile in $profiles) {
-                $status = if ($profile.Enabled) { "ENABLED" } else { "DISABLED" }
-                $output += ""
-                $output += "Profile: $($profile.Name)"
-                $output += "  Status: $status"
-                $output += "  Default Inbound: $($profile.DefaultInboundAction)"
-                $output += "  Default Outbound: $($profile.DefaultOutboundAction)"
-            }
-
-            $output += ""
-            $output += "=" * 50
-
-            $enabledCount = ($profiles | Where-Object { $_.Enabled }).Count
-            $totalCount = $profiles.Count
-
-            if ($enabledCount -eq $totalCount) {
-                $output += "Status: All firewall profiles are ENABLED (Secure)"
-            }
-            elseif ($enabledCount -eq 0) {
-                $output += "WARNING: All firewall profiles are DISABLED (Security Risk!)"
-            }
-            else {
-                $output += "WARNING: Some firewall profiles are disabled (Inconsistent State)"
-            }
-
-            return $output -join "`r`n"
-        } -OperationName "Get Firewall Status"
+        } -ArgumentList $newName, $credential -ErrorAction Stop
 
         if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
+            $terminalOutputBox.Text += "Successfully renamed computer!`r`n`r`n"
+            $terminalOutputBox.Text += "Old Name: $($result.OldName)`r`n"
+            $terminalOutputBox.Text += "New Name: $($result.NewName)`r`n"
+            $terminalOutputBox.Text += "Domain: $($result.Domain)`r`n`r`n"
+            $terminalOutputBox.Text += "Restarting computer to apply changes..."
+
+            # Restart the computer
+            Restart-Computer -ComputerName $remoteMachine -Credential $credential -Force -ErrorAction Stop
+
+            $terminalOutputBox.Text += "`r`n`r`nRestart command sent. The computer will reboot momentarily."
+            $terminalOutputBox.Text += "`r`n`r`nWait 2-3 minutes, then use '$($result.NewName)' to connect."
+
+            [Logger]::Info("Successfully renamed $remoteMachine to $newName and initiated restart")
+        }
+        else {
+            $terminalOutputBox.Text = "ERROR: Failed to rename computer.`r`n$($result.Error)"
+            [Logger]::Error("Rename failed for ${remoteMachine}: $($result.Error)")
         }
     }
     catch {
-        $errorMessage = "Error querying firewall status on ${remoteMachine}: $($_.Exception.Message)"
+        $errorMessage = "Error renaming computer ${remoteMachine}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
     }
@@ -1766,91 +1531,6 @@ $btnBitLockerStatus.Add_Click({
     }
     catch {
         $errorMessage = "Error querying BitLocker status on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Windows Defender Status Button Click Event
-$btnDefenderStatus.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        [Logger]::Info("Querying Windows Defender status on $remoteMachine")
-        $terminalOutputBox.Text = "Querying Windows Defender status on ${remoteMachine}..."
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            try {
-                $status = Get-MpComputerStatus -ErrorAction Stop
-
-                $output = @(
-                    "Windows Defender Antivirus Status:",
-                    "=" * 50,
-                    "",
-                    "Real-Time Protection:",
-                    "  Real-Time Protection Enabled: $($status.RealTimeProtectionEnabled)",
-                    "  Behavior Monitor Enabled: $($status.BehaviorMonitorEnabled)",
-                    "  On Access Protection Enabled: $($status.OnAccessProtectionEnabled)",
-                    "  I/O Antivirus Protection Enabled: $($status.IoavProtectionEnabled)",
-                    "",
-                    "Antivirus Definitions:",
-                    "  Antivirus Signature Version: $($status.AntivirusSignatureVersion)",
-                    "  Antivirus Signature Last Updated: $($status.AntivirusSignatureLastUpdated)",
-                    "  Antivirus Signature Age (days): $($status.AntivirusSignatureAge)",
-                    "",
-                    "Scan Information:",
-                    "  Last Quick Scan: $($status.QuickScanEndTime)",
-                    "  Last Full Scan: $($status.FullScanEndTime)",
-                    "  Days Since Last Quick Scan: $((Get-Date) - $status.QuickScanEndTime | Select-Object -ExpandProperty Days)",
-                    "",
-                    "Antispyware:",
-                    "  Antispyware Enabled: $($status.AntispywareEnabled)",
-                    "  Antispyware Signature Version: $($status.AntispywareSignatureVersion)",
-                    "  Antispyware Signature Last Updated: $($status.AntispywareSignatureLastUpdated)",
-                    "",
-                    "Product Status:",
-                    "  Antivirus Product Enabled: $($status.AntivirusEnabled)",
-                    "  Product Status: $($status.AMProductVersion)",
-                    "",
-                    "=" * 50
-                )
-
-                # Add health summary
-                $issues = @()
-                if (-not $status.RealTimeProtectionEnabled) { $issues += "Real-Time Protection is DISABLED" }
-                if ($status.AntivirusSignatureAge -gt 7) { $issues += "Definitions are outdated (>7 days old)" }
-                if (-not $status.AntivirusEnabled) { $issues += "Antivirus is DISABLED" }
-
-                if ($issues.Count -eq 0) {
-                    $output += "Health Status: PROTECTED (All checks passed)"
-                }
-                else {
-                    $output += "Health Status: AT RISK - Issues Found:"
-                    foreach ($issue in $issues) {
-                        $output += "  - $issue"
-                    }
-                }
-
-                return $output -join "`r`n"
-            }
-            catch {
-                return "ERROR: Unable to query Windows Defender status.`r`n`r`nPossible reasons:`r`n- Windows Defender is not available on this system`r`n- Third-party antivirus is installed`r`n- Insufficient permissions`r`n`r`nDetails: $($_.Exception.Message)"
-            }
-        } -OperationName "Get Defender Status"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error querying Windows Defender status on ${remoteMachine}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
     }
