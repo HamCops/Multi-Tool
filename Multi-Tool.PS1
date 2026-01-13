@@ -86,12 +86,10 @@ $XAML = @"
             <Button Name="btnRDC" Content="Launch RDC" Width="180" Margin="5"/>
             <Button Name="btnEventLog" Content="Open Event Log" Width="180" Margin="5"/>
             <Button Name="btnIncident" Content="Open IncidentIQ" Width="150" Margin="5"/>
-            <Button Name="btnUpgradeWindows11" Content="Upgrade to Windows 11" Width="180" Margin="5"/>
             <Button Name="btnFixMDT" Content="Fix MDT Error" Width="180" Margin="5"/>
             <Button Name="btnShowCurrentUser" Content="Show Current User" Width="180" Margin="5"/>
             <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Width="180" Margin="5"/>
             <Button Name="btnClearDNS" Content="Clear DNS Cache" Width="180" Margin="5"/>
-            <Button Name="btnLogoffUser" Content="Logoff User" Width="180" Margin="5"/>
             <Button Name="btnShutdown" Content="Remote Shutdown" Width="180" Margin="5"/>
             <Button Name="btnGetComputerInfo" Content="Computer AD Info" Width="180" Margin="5"/>
             <Button Name="btnFirewallStatus" Content="Firewall Status" Width="180" Margin="5"/>
@@ -127,12 +125,10 @@ $btnEventLog = $Window.FindName("btnEventLog")
 $btnIncident = $Window.FindName("btnIncident")
 $btnGetInstalledSoftware = $Window.FindName("btnGetInstalledSoftware")
 $btnGetUpTime = $Window.FindName("btnGetUpTime")
-$btnUpgradeWindows11 = $Window.FindName("btnUpgradeWindows11")
 $btnFixMDT = $Window.FindName("btnFixMDT")
 $btnShowCurrentUser = $Window.FindName("btnShowCurrentUser")
 $btnClearPrintQueue = $Window.FindName("btnClearPrintQueue")
 $btnClearDNS = $Window.FindName("btnClearDNS")
-$btnLogoffUser = $Window.FindName("btnLogoffUser")
 $btnShutdown = $Window.FindName("btnShutdown")
 $btnGetComputerInfo = $Window.FindName("btnGetComputerInfo")
 $btnFirewallStatus = $Window.FindName("btnFirewallStatus")
@@ -648,221 +644,6 @@ $btnGetUpTime.Add_Click({
         $errorMessage = "Error retrieving uptime for ${remoteMachine}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
-    }
-})
-
-# Upgrade to Windows 11 Button Click Event
-$btnUpgradeWindows11.Add_Click({
-    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-    if (Validate-Hostname $remoteMachine) {
-        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-        return
-    }
-
-    # Warning about security risks
-    $confirmResult = [System.Windows.MessageBox]::Show(
-        "WARNING: Windows 11 upgrade is a critical operation that will:$([Environment]::NewLine)" +
-        "- Download and execute software from the internet$([Environment]::NewLine)" +
-        "- Require system restart$([Environment]::NewLine)" +
-        "- May take several hours to complete$([Environment]::NewLine)$([Environment]::NewLine)" +
-        "Are you sure you want to proceed?",
-        "Windows 11 Upgrade Warning",
-        [System.Windows.MessageBoxButton]::YesNo,
-        [System.Windows.MessageBoxImage]::Warning
-    )
-
-    if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
-        $terminalOutputBox.Text = "Windows 11 upgrade cancelled by user."
-        return
-    }
-
-    # Show progress bar
-    $progressBar.Visibility = [System.Windows.Visibility]::Visible
-    $progressBar.Value = 0
-
-    # Prompt for credentials
-    $credential = Get-Credential -Message "Enter administrator credentials for $remoteMachine"
-    if (-not $credential) {
-        $terminalOutputBox.Text = "Upgrade cancelled: No credentials provided."
-        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
-        return
-    }
-
-    # Define the secure upgrade script block
-    $upgradeScriptBlock = {
-        param($remoteMachine, $credential, $appConfig)
-
-        try {
-            [Logger]::Info("Starting Windows 11 upgrade process for $remoteMachine")
-
-            # Check if already running Windows 11
-            $osInfo = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
-                Get-CimInstance -ClassName Win32_OperatingSystem
-            } -ErrorAction Stop
-
-            if ($osInfo.Caption -like "*Windows 11*") {
-                return @{
-                    Success = $true
-                    Message = "${remoteMachine} is already running Windows 11."
-                    AlreadyUpgraded = $true
-                }
-            }
-
-            # Comprehensive compatibility check
-            $compatibilityResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
-                $cpuInfo = Get-CimInstance -ClassName Win32_Processor
-                $memInfo = Get-CimInstance -ClassName Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
-                $diskInfo = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3 AND DeviceID='C:'"
-                $tpmInfo = try { Get-CimInstance -Namespace root/CIMV2/Security/MicrosoftTpm -ClassName Win32_Tpm } catch { $null }
-                $biosInfo = Get-CimInstance -ClassName Win32_BIOS
-
-                $totalMemoryGB = [math]::round($memInfo.Sum / 1GB, 2)
-                $freeSpaceGB = [math]::round($diskInfo.FreeSpace / 1GB, 2)
-                $isUEFI = $env:FIRMWARE_TYPE -eq "UEFI"
-
-                $issues = @()
-                if ($cpuInfo.NumberOfCores -lt 2) { $issues += "Insufficient CPU cores ($($cpuInfo.NumberOfCores), minimum 2 required)" }
-                if ($totalMemoryGB -lt 4) { $issues += "Insufficient RAM ($totalMemoryGB GB, minimum 4 GB required)" }
-                if ($freeSpaceGB -lt 64) { $issues += "Insufficient free disk space ($freeSpaceGB GB, minimum 64 GB required)" }
-                if (-not $tpmInfo -or $tpmInfo.SpecVersion -lt "2.0") { $issues += "TPM 2.0 not detected or enabled" }
-                if (-not $isUEFI) { $issues += "UEFI boot mode not detected (Legacy BIOS not supported)" }
-
-                return @{
-                    IsCompatible = $issues.Count -eq 0
-                    Issues = $issues
-                    SystemInfo = @{
-                        CPU = $cpuInfo.Name
-                        Memory = "$totalMemoryGB GB"
-                        FreeSpace = "$freeSpaceGB GB"
-                        TPM = if ($tpmInfo) { $tpmInfo.SpecVersion } else { "Not detected" }
-                        Firmware = if ($isUEFI) { "UEFI" } else { "Legacy BIOS" }
-                    }
-                }
-            } -ErrorAction Stop
-
-            if (-not $compatibilityResult.IsCompatible) {
-                return @{
-                    Success = $false
-                    Message = "System compatibility check failed:`r`n" + ($compatibilityResult.Issues -join "`r`n")
-                    CompatibilityIssues = $compatibilityResult.Issues
-                }
-            }
-
-            # Download and verify the installation assistant
-            $downloadResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
-                param($url, $expectedHash)
-
-                $installPath = "$env:TEMP\Windows11InstallationAssistant.exe"
-                $logPath = "$env:TEMP\Windows11Upgrade.log"
-
-                try {
-                    # Download with progress tracking
-                    $webClient = New-Object System.Net.WebClient
-                    $webClient.DownloadFile($url, $installPath)
-
-                    # Verify file exists and has reasonable size
-                    $fileInfo = Get-Item $installPath
-                    if ($fileInfo.Length -lt 1MB) {
-                        throw "Downloaded file is too small ($($fileInfo.Length) bytes)"
-                    }
-
-                    # Hash verification (if hash provided)
-                    if ($expectedHash) {
-                        $actualHash = Get-FileHash -Path $installPath -Algorithm SHA256
-                        if ($actualHash.Hash -ne $expectedHash) {
-                            Remove-Item $installPath -Force
-                            throw "File hash verification failed"
-                        }
-                    }
-
-                    return @{
-                        Success = $true
-                        Path = $installPath
-                        Size = $fileInfo.Length
-                        Message = "Download completed successfully"
-                    }
-                } catch {
-                    return @{
-                        Success = $false
-                        Message = "Download failed: $($_.Exception.Message)"
-                    }
-                } finally {
-                    if ($webClient) { $webClient.Dispose() }
-                }
-            } -ArgumentList $appConfig.URLs.Windows11Installer, $appConfig.URLs.Windows11InstallerHash -ErrorAction Stop
-
-            if (-not $downloadResult.Success) {
-                return @{
-                    Success = $false
-                    Message = $downloadResult.Message
-                }
-            }
-
-            # Execute the upgrade with logging
-            $upgradeResult = Invoke-Command -ComputerName $remoteMachine -Credential $credential -ScriptBlock {
-                param($installPath)
-
-                try {
-                    $logPath = "$env:TEMP\Windows11Upgrade.log"
-                    $arguments = @("/quietinstall", "/log", $logPath)
-
-                    $process = Start-Process -FilePath $installPath -ArgumentList $arguments -PassThru -Wait -ErrorAction Stop
-
-                    $logContent = if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "Log file not found" }
-
-                    return @{
-                        Success = $process.ExitCode -eq 0
-                        ExitCode = $process.ExitCode
-                        LogContent = $logContent
-                        Message = if ($process.ExitCode -eq 0) { "Upgrade initiated successfully" } else { "Upgrade failed with exit code $($process.ExitCode)" }
-                    }
-                } catch {
-                    return @{
-                        Success = $false
-                        Message = "Execution failed: $($_.Exception.Message)"
-                    }
-                }
-            } -ArgumentList $downloadResult.Path -ErrorAction Stop
-
-            return $upgradeResult
-
-        } catch {
-            [Logger]::Error("Windows 11 upgrade failed for ${remoteMachine}: $($_.Exception.Message)")
-            return @{
-                Success = $false
-                Message = "Critical error: $($_.Exception.Message)"
-            }
-        }
-    }
-
-    # Execute upgrade asynchronously
-    $terminalOutputBox.Text = "Initiating Windows 11 upgrade process for ${remoteMachine}..."
-    $progressBar.Value = 10
-
-    try {
-        $result = & $upgradeScriptBlock $remoteMachine $credential $Global:AppConfig
-
-        $progressBar.Value = 100
-        if ($result.Success) {
-            if ($result.AlreadyUpgraded) {
-                $terminalOutputBox.Text = $result.Message
-            } else {
-                $terminalOutputBox.Text = "Windows 11 upgrade process completed for ${remoteMachine}.`r`n" +
-                                         "The system will restart automatically to complete the installation.`r`n" +
-                                         "This process may take several hours."
-            }
-            [Logger]::Info("Windows 11 upgrade completed for $remoteMachine")
-        } else {
-            $terminalOutputBox.Text = "Windows 11 upgrade failed for ${remoteMachine}:`r`n$($result.Message)"
-            [Logger]::Error("Windows 11 upgrade failed for ${remoteMachine}: $($result.Message)")
-        }
-    } catch {
-        $errorMessage = "Critical error during Windows 11 upgrade: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    } finally {
-        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
     }
 })
 
@@ -1473,67 +1254,6 @@ $btnClearDNS.Add_Click({
     }
 })
 
-# Logoff User Button Click Event
-$btnLogoffUser.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        # First, get the current user
-        $userResult = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
-            return $computerSystem.UserName
-        } -OperationName "Get Current User"
-
-        $currentUser = if ($userResult.Success -and $userResult.Data) { $userResult.Data } else { "Unknown user" }
-
-        $confirmResult = [System.Windows.MessageBox]::Show(
-            "This will forcefully log off the current user on $remoteMachine.`r`n`r`nCurrent User: $currentUser`r`n`r`nAny unsaved work will be lost. Continue?",
-            "Confirm Logoff",
-            [System.Windows.MessageBoxButton]::YesNo,
-            [System.Windows.MessageBoxImage]::Warning
-        )
-
-        if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
-            $terminalOutputBox.Text = "Logoff operation cancelled."
-            return
-        }
-
-        [Logger]::Info("Logging off user on $remoteMachine")
-        $terminalOutputBox.Text = "Logging off user on ${remoteMachine}..."
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            # Use logoff command to log off the console session
-            $logoffOutput = logoff 2>&1
-
-            $output = @(
-                "Logoff Command Executed",
-                "=" * 50,
-                "User has been logged off from the console session.",
-                "",
-                "Note: The user's session should terminate within a few seconds."
-            ) -join "`r`n"
-
-            return $output
-        } -OperationName "Logoff User"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error logging off user on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
 # Remote Shutdown Button Click Event
 $btnShutdown.Add_Click({
     try {
@@ -1625,7 +1345,7 @@ $btnGetComputerInfo.Add_Click({
                 "  Location: $($computerInfo.Location)",
                 "",
                 "Security:",
-                "  SID: $($computerInfo.SID)"
+                "  SID: $($computerInfo.SID.Value)"
             ) -join "`r`n"
 
             $terminalOutputBox.Text = $output
@@ -1781,56 +1501,99 @@ $btnDefenderStatus.Add_Click({
             return
         }
 
-        [Logger]::Info("Querying Windows Defender status on $remoteMachine")
+        [Logger]::Info("Querying Windows Defender status and threats on $remoteMachine")
         $terminalOutputBox.Text = "Querying Windows Defender status on ${remoteMachine}..."
+        $progressBar.Visibility = [System.Windows.Visibility]::Visible
+        $progressBar.Value = 10
 
         $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
             try {
+                # Get Defender service status
+                $service = Get-Service -Name WinDefend -ErrorAction SilentlyContinue
+                $serviceStatus = if ($service) { $service.Status } else { "Not Available" }
+
+                # Get Defender configuration status
                 $status = Get-MpComputerStatus -ErrorAction Stop
 
                 $output = @(
-                    "Windows Defender Antivirus Status:",
-                    "=" * 50,
+                    "=== Windows Defender Status for $env:COMPUTERNAME ===",
                     "",
-                    "Real-Time Protection:",
-                    "  Real-Time Protection Enabled: $($status.RealTimeProtectionEnabled)",
-                    "  Behavior Monitor Enabled: $($status.BehaviorMonitorEnabled)",
-                    "  On Access Protection Enabled: $($status.OnAccessProtectionEnabled)",
-                    "  I/O Antivirus Protection Enabled: $($status.IoavProtectionEnabled)",
+                    "Service Status: $serviceStatus",
+                    "Real-Time Protection: $(if ($status.RealTimeProtectionEnabled) { 'Enabled' } else { 'DISABLED' })",
+                    "Last Quick Scan: $($status.QuickScanEndTime)",
+                    "Last Full Scan: $($status.FullScanEndTime)",
                     "",
-                    "Antivirus Definitions:",
-                    "  Antivirus Signature Version: $($status.AntivirusSignatureVersion)",
-                    "  Antivirus Signature Last Updated: $($status.AntivirusSignatureLastUpdated)",
-                    "  Antivirus Signature Age (days): $($status.AntivirusSignatureAge)",
+                    "Antivirus Signature Version: $($status.AntivirusSignatureVersion)",
+                    "Signature Last Updated: $($status.AntivirusSignatureLastUpdated)",
+                    "Signature Age (days): $($status.AntivirusSignatureAge)",
                     "",
-                    "Scan Information:",
-                    "  Last Quick Scan: $($status.QuickScanEndTime)",
-                    "  Last Full Scan: $($status.FullScanEndTime)",
-                    "  Days Since Last Quick Scan: $((Get-Date) - $status.QuickScanEndTime | Select-Object -ExpandProperty Days)",
+                    "Behavior Monitor: $(if ($status.BehaviorMonitorEnabled) { 'Enabled' } else { 'Disabled' })",
+                    "On Access Protection: $(if ($status.OnAccessProtectionEnabled) { 'Enabled' } else { 'Disabled' })",
+                    "I/O Protection: $(if ($status.IoavProtectionEnabled) { 'Enabled' } else { 'Disabled' })",
                     "",
-                    "Antispyware:",
-                    "  Antispyware Enabled: $($status.AntispywareEnabled)",
-                    "  Antispyware Signature Version: $($status.AntispywareSignatureVersion)",
-                    "  Antispyware Signature Last Updated: $($status.AntispywareSignatureLastUpdated)",
-                    "",
-                    "Product Status:",
-                    "  Antivirus Product Enabled: $($status.AntivirusEnabled)",
-                    "  Product Status: $($status.AMProductVersion)",
-                    "",
-                    "=" * 50
+                    "=== Recent Threats (Last 24 Hours) ===",
+                    ""
                 )
 
+                # Query Defender event log for threats (Event ID 1116)
+                $yesterday = (Get-Date).AddDays(-1)
+                $threatEvents = @()
+
+                try {
+                    $threatEvents = Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -ErrorAction Stop |
+                        Where-Object { $_.Id -eq 1116 -and $_.TimeCreated -ge $yesterday }
+                } catch {
+                    $output += "[WARNING] Could not query Defender event log: $($_.Exception.Message)"
+                    $output += ""
+                }
+
+                if ($threatEvents.Count -eq 0) {
+                    $output += "[+] No threats detected in the last 24 hours"
+                } else {
+                    $output += "[!] $($threatEvents.Count) threat(s) detected in the last 24 hours:"
+                    $output += ""
+
+                    foreach ($event in $threatEvents) {
+                        $output += "[!] THREAT DETECTED"
+                        $output += "    Time: $($event.TimeCreated)"
+
+                        # Extract threat details from event properties
+                        # Event 1116 structure: Properties[0] = Threat Name, Properties[1] = Severity, etc.
+                        if ($event.Properties.Count -ge 2) {
+                            $threatName = if ($event.Properties[0].Value) { $event.Properties[0].Value } else { "Unknown" }
+                            $output += "    Threat: $threatName"
+                        }
+
+                        if ($event.Properties.Count -ge 7) {
+                            $threatPath = if ($event.Properties[6].Value) { $event.Properties[6].Value } else { "Unknown" }
+                            $output += "    Path: $threatPath"
+                        }
+
+                        if ($event.Properties.Count -ge 14) {
+                            $action = if ($event.Properties[13].Value) { $event.Properties[13].Value } else { "Unknown" }
+                            $output += "    Action: $action"
+                        }
+
+                        $output += ""
+                    }
+                }
+
                 # Add health summary
+                $output += "=== Health Summary ==="
                 $issues = @()
+                if ($serviceStatus -ne "Running") { $issues += "Windows Defender service is not running" }
                 if (-not $status.RealTimeProtectionEnabled) { $issues += "Real-Time Protection is DISABLED" }
                 if ($status.AntivirusSignatureAge -gt 7) { $issues += "Definitions are outdated (>7 days old)" }
                 if (-not $status.AntivirusEnabled) { $issues += "Antivirus is DISABLED" }
+                if ($threatEvents.Count -gt 0) { $issues += "$($threatEvents.Count) threat(s) detected in last 24 hours" }
 
                 if ($issues.Count -eq 0) {
-                    $output += "Health Status: PROTECTED (All checks passed)"
+                    $output += "Status: HEALTHY - All checks passed"
                 }
                 else {
-                    $output += "Health Status: AT RISK - Issues Found:"
+                    $output += "Status: ATTENTION REQUIRED"
+                    $output += ""
+                    $output += "Issues:"
                     foreach ($issue in $issues) {
                         $output += "  - $issue"
                     }
@@ -1839,20 +1602,27 @@ $btnDefenderStatus.Add_Click({
                 return $output -join "`r`n"
             }
             catch {
-                return "ERROR: Unable to query Windows Defender status.`r`n`r`nPossible reasons:`r`n- Windows Defender is not available on this system`r`n- Third-party antivirus is installed`r`n- Insufficient permissions`r`n`r`nDetails: $($_.Exception.Message)"
+                return "ERROR: Unable to query Windows Defender.`r`n`r`nPossible reasons:`r`n- Windows Defender is not available on this system`r`n- Third-party antivirus is installed`r`n- Insufficient permissions`r`n`r`nDetails: $($_.Exception.Message)"
             }
-        } -OperationName "Get Defender Status"
+        } -OperationName "Get Defender Status and Threats"
+
+        $progressBar.Value = 90
 
         if ($result.Success) {
             $terminalOutputBox.Text = $result.Data
+            [Logger]::Info("Successfully retrieved Defender status and threats for $remoteMachine")
         } else {
             $terminalOutputBox.Text = "ERROR: $($result.Message)"
+            [Logger]::Error("Failed to retrieve Defender status for ${remoteMachine}: $($result.Message)")
         }
     }
     catch {
-        $errorMessage = "Error querying Windows Defender status on ${remoteMachine}: $($_.Exception.Message)"
+        $errorMessage = "Error querying Windows Defender on ${remoteMachine}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
+    }
+    finally {
+        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
     }
 })
 

@@ -13,33 +13,42 @@ A PowerShell WPF-based graphical interface for remote Windows system administrat
 - [Architecture](#architecture)
 - [Troubleshooting](#troubleshooting)
 
-## ✨ Features
+## ✨ Features (18 Buttons)
 
 ### Network Operations
-- **DNS Resolution** - Resolve hostnames to IP addresses
+- **DNS Resolution** - Resolve hostnames to IP addresses (forward and reverse lookup)
 - **Ping Test** - Test network connectivity with detailed results
 - **Remote Connectivity Validation** - Comprehensive testing (DNS, ping, WinRM)
 
 ### System Information
-- **System Info** - OS details, architecture, machine name, current user
-- **Uptime Monitoring** - Get system uptime and last boot time
-- **Installed Software** - Query installed applications on remote machines
+- **Get System Info** - Comprehensive system details (OS, CPU, RAM, disks, network)
+- **Get Up Time** - Display system uptime and last boot time
+- **Show Current User** - Display currently logged-in user
+- **Get Installed Software** - Query all installed applications on remote machines
+- **Computer AD Info** - Display Active Directory computer information
 
 ### Remote Management
-- **PowerShell Sessions** - Open interactive PS sessions to remote computers
-- **GPUpdate** - Force Group Policy updates on target machines
-- **Event Viewer** - Launch Event Viewer connected to remote systems
-- **MDT/WDT Cleanup** - Remove Microsoft Deployment Toolkit artifacts
+- **Open PS Session** - Launch interactive PowerShell session to remote computers
+- **Run GPUpdate** - Force Group Policy updates on target machines
+- **Open Event Log** - Launch Event Viewer connected to remote systems
+- **Remote Shutdown** - Safely shut down remote computers with confirmation
 
 ### Remote Tools
-- **MSRA** - Launch Microsoft Remote Assistance to target machine
-- **RDC** - Open Remote Desktop Connection to specified computer
+- **Launch MSRA** - Launch Microsoft Remote Assistance to target machine
+- **Launch RDC** - Open Remote Desktop Connection to specified computer
 
-### System Upgrades
-- **Windows 11 Upgrade** - Download and launch Windows 11 Installation Assistant
+### System Maintenance
+- **Clear Print Queue** - Clear stuck print jobs on remote machines
+- **Clear DNS Cache** - Flush DNS resolver cache on target systems
+- **Fix MDT Error** - Remove Microsoft Deployment Toolkit artifacts causing startup errors
+
+### Security & Compliance
+- **Firewall Status** - Check Windows Firewall state across all profiles
+- **BitLocker Status** - Display drive encryption status and recovery key info
+- **Defender Status** - ⭐ **Enhanced** - View Windows Defender status + recent threats detected in last 24 hours
 
 ### Web Portals
-- **IncidentIQ** - Quick access to ticketing system
+- **Open IncidentIQ** - Quick access to ticketing system
 
 ## 🔧 Requirements
 
@@ -63,7 +72,7 @@ A PowerShell WPF-based graphical interface for remote Windows system administrat
 ### Download
 1. Clone or download this repository
 2. Navigate to the project folder
-3. The main file is `tool.txt` (~1250 lines, fully self-contained)
+3. The main file is `Multi-Tool.PS1` (~1650 lines, fully self-contained)
 
 ### No Installation Required
 This is a standalone PowerShell script with no external dependencies. Just download and run.
@@ -76,26 +85,26 @@ This is a standalone PowerShell script with no external dependencies. Just downl
 cd C:\Path\To\Multi-Tool
 
 # Run the script
-powershell.exe -ExecutionPolicy Bypass -File "tool.txt"
+powershell.exe -ExecutionPolicy Bypass -File "Multi-Tool.PS1"
 ```
 
 ### Method 2: From PowerShell Console
 ```powershell
 # If execution policy allows
-.\tool.txt
+.\Multi-Tool.PS1
 
 # Or with bypass
-powershell.exe -ExecutionPolicy Bypass -File ".\tool.txt"
+powershell.exe -ExecutionPolicy Bypass -File ".\Multi-Tool.PS1"
 ```
 
 ### Method 3: Windows Run Dialog (Win+R)
 ```
-powershell.exe -ExecutionPolicy Bypass -File "C:\Path\To\Multi-Tool\tool.txt"
+powershell.exe -ExecutionPolicy Bypass -File "C:\Path\To\Multi-Tool\Multi-Tool.PS1"
 ```
 
 ### Method 4: Create Desktop Shortcut
 1. Right-click on Desktop → New → Shortcut
-2. Target: `powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Path\To\Multi-Tool\tool.txt"`
+2. Target: `powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Path\To\Multi-Tool\Multi-Tool.PS1"`
 3. Name: Multi-Tool
 4. (Optional) Change icon to a relevant system icon
 
@@ -262,22 +271,26 @@ A comprehensive security review was conducted (see `InitialWrite\Up.md`). All cr
 
 ### Code Structure
 ```
-tool.txt (~1250 lines)
+Multi-Tool.PS1 (~1650 lines)
 ├── WPF Assembly Loading (Lines 1-3)
 ├── Utility Classes (Lines 5-40)
-│   ├── InputValidator
-│   └── Logger
+│   ├── InputValidator (hostname/IP validation)
+│   └── Logger (audit trail logging)
 ├── Configuration (Lines 42-53)
 │   └── AppConfig hashtable
 ├── XAML GUI Definition (Lines 54-105)
+│   └── 18 feature buttons
 ├── XAML Loading (Lines 107-110)
-├── Control References (Lines 112-125)
-├── Helper Functions (Lines 127-200)
+├── Control References (Lines 112-140)
+├── Helper Functions (Lines 142-320)
 │   ├── Get-SafeDateTime
 │   ├── Test-RemoteConnectivity
-│   └── Invoke-RemoteOperation
-└── Event Handlers (Lines 200-1240)
-    └── Button click handlers for each feature
+│   ├── Invoke-RemoteOperation
+│   ├── Get-SystemInfoOptimized
+│   ├── Download-VerifiedFile
+│   └── Update-ConnectionStatus
+└── Event Handlers (Lines 323-1580)
+    └── 18 button click handlers
 ```
 
 ### Key Design Patterns
@@ -407,6 +420,24 @@ This tool performs administrative operations on remote systems. Always:
 
 ---
 
-**Version**: 2.0 (Refactored with security improvements)  
-**Last Updated**: 2025-01-05  
+**Version**: 2.1 (Enhanced Defender Check, Streamlined Features)  
+**Last Updated**: 2026-01-13  
 **Maintained By**: IT Department
+
+## 📝 Recent Changes (v2.1)
+
+### Added
+- ⭐ **Enhanced Defender Status Check** - Now includes threat detection from last 24 hours
+  - Queries Windows Defender Operational event log
+  - Shows Event ID 1116 (threats detected)
+  - Displays threat name, path, time, and action taken
+  - Comprehensive health summary with issue detection
+
+### Removed
+- ❌ Logoff User button (security policy change)
+- ❌ Upgrade to Windows 11 button (centralized deployment preferred)
+
+### Cleaned Up
+- Removed old backup files
+- Removed implementation notes (outdated)
+- Removed integrated defender check script (functionality now built-in)

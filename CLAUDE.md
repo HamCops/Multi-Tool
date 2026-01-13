@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-Tool is a PowerShell WPF GUI application for Windows system administration tasks. It provides a graphical interface for remote system management including network diagnostics, system information gathering, remote connections, Windows 11 upgrades, and MDT/WDT deployment cleanup.
+Multi-Tool is a PowerShell WPF GUI application for Windows system administration tasks. It provides a graphical interface for remote system management including network diagnostics, system information gathering, remote connections, security compliance checks, and MDT/WDT deployment cleanup.
 
 ## Architecture
 
 ### Core Structure
 
-The application is entirely self-contained in `tool.txt` (~1250 lines) with the following sections:
+The application is entirely self-contained in `Multi-Tool.PS1` (~1650 lines) with the following sections:
 
 1. **WPF Assembly Loading** (Lines 1-3): Loads required .NET assemblies
 2. **Utility Classes** (Lines 5-40): InputValidator and Logger classes
@@ -56,13 +56,13 @@ The application is entirely self-contained in `tool.txt` (~1250 lines) with the 
 ### Execution
 ```powershell
 # Direct execution
-.\tool.txt
+.\Multi-Tool.PS1
 
 # With explicit policy bypass
-powershell.exe -ExecutionPolicy Bypass -File "tool.txt"
+powershell.exe -ExecutionPolicy Bypass -File "Multi-Tool.PS1"
 
 # From Windows Run dialog (Win+R)
-powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\tool.txt"
+powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\Multi-Tool.PS1"
 ```
 
 ### Testing Strategy
@@ -191,7 +191,7 @@ finally {
 
 ## MDT/WDT Cleanup Feature
 
-The MDT cleanup functionality is fully embedded in `tool.txt` (lines ~852-1240) and requires no external files.
+The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires no external files.
 
 **What It Does**: 
 - Executes remote cleanup of MDT/WDT deployment artifacts via PowerShell remoting
@@ -228,14 +228,13 @@ The MDT cleanup functionality is fully embedded in `tool.txt` (lines ~852-1240) 
 
 ```
 /home/cam/Projects/Multi-Tool/
-├── tool.txt                      # Main application (PowerShell + WPF) - fully self-contained
-├── README.md                     # Project description
-├── CLAUDE.md                     # This file
-├── InitialWrite\Up.md            # Security analysis and recommendations
+├── Multi-Tool.PS1                # Main application (PowerShell + WPF) - fully self-contained
+├── README.md                     # Project documentation
+├── CLAUDE.md                     # This file - development guide
 └── Multi-Tool.code-workspace     # VS Code workspace
 ```
 
-**Note**: The application is entirely self-contained in `tool.txt` with no external script dependencies.
+**Note**: The application is entirely self-contained in `Multi-Tool.PS1` with no external script dependencies.
 
 ## Dependencies
 
