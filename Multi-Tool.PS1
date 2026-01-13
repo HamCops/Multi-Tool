@@ -540,8 +540,29 @@ $btnEventLog.Add_Click({
     }
 
     try {
-        # Launch Event Viewer for the target machine
-        Start-Process "eventvwr.msc" -ArgumentList "/s:$hostnameOrIp"
+        # Create a temporary MSC file with Event Viewer configured for remote computer
+        $mscContent = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<MMC_CONSOLE_FILE ConsoleVersion="2.0">
+<Console>
+<ConsoleTree>
+<NodeData>
+<NodeType>Microsoft.EventViewer</NodeType>
+<NodeData>
+<ComputerName>$hostnameOrIp</ComputerName>
+</NodeData>
+</NodeData>
+</ConsoleTree>
+</Console>
+</MMC_CONSOLE_FILE>
+"@
+
+        $tempMscPath = "$env:TEMP\EventViewer_$hostnameOrIp.msc"
+        $mscContent | Out-File -FilePath $tempMscPath -Encoding UTF8 -Force
+
+        # Launch MMC with the configured Event Viewer
+        Start-Process "mmc.exe" -ArgumentList $tempMscPath
+
         $terminalOutputBox.Text = "Opening Event Log for $hostnameOrIp."
         [Logger]::Info("Opened Event Log for $hostnameOrIp")
     } catch {
