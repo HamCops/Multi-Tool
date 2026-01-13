@@ -224,6 +224,31 @@ The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires
 - Use `-ErrorAction Stop` with try-catch for predictable error handling
 - Log security-relevant operations with `[Logger]::Info()` or `[Logger]::Warn()`
 
+### Known Issues with Active Directory Queries
+
+**WARNING**: Some environments may have corrupted Active Directory or WMI data that causes type conversion errors when using cmdlets like `Get-ADComputer`, `Get-MpComputerStatus`, or certain `Get-CimInstance` queries.
+
+**Symptoms**:
+- Error: "Cannot convert System.Object[] to System.UInt32" or similar type conversion errors
+- Buttons that query AD/WMI properties fail even with proper error handling
+- The issue persists across different query methods (Get-ADComputer, Get-ADObject, ADSI searcher)
+
+**Root Cause**:
+- Active Directory properties contain array values where PowerShell cmdlets expect scalar values
+- This is a data integrity issue in the AD database, not a code issue
+- Common in environments with custom AD schema extensions or historical data corruption
+
+**Solutions**:
+1. **Avoid problematic cmdlets**: Use simpler alternatives like `quser` command instead of CIM queries, or LDAP searches with individual property queries
+2. **Clean Active Directory**: Work with domain administrators to identify and fix AD objects with array properties where single values are expected
+3. **Update PowerShell modules**: Ensure RSAT tools and ActiveDirectory module are up-to-date
+4. **Query properties individually**: Instead of requesting multiple properties at once, query them one at a time with error suppression for each
+
+**Removed Features** (due to AD corruption in target environment):
+- Computer AD Info button (Get-ADComputer queries)
+- Windows Defender Status button (Get-MpComputerStatus queries)  
+- Show Current User button (Get-CimInstance Win32_ComputerSystem queries)
+
 ## File Structure
 
 ```
