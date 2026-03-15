@@ -1,4 +1,4 @@
-# Load WPF Assemblies
+﻿# Load WPF Assemblies
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName PresentationCore
@@ -148,7 +148,7 @@ $XAML = @"
                     <Button Name="btnLogOff" Content="Remote Log Off" Style="{StaticResource ToolBtn}" ToolTip="View active sessions and log off a user remotely"/>
                     <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Style="{StaticResource ToolBtn}" ToolTip="Stop Print Spooler, clear all stuck jobs, restart Spooler"/>
                     <Button Name="btnClearDNS" Content="Clear DNS Cache" Style="{StaticResource ToolBtn}" ToolTip="Flush DNS resolver cache on remote machine (ipconfig /flushdns)"/>
-                    <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}" ToolTip="Restart the remote machine — confirmation required"/>
+                    <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}" ToolTip="Restart the remote machine  -  confirmation required"/>
                 </WrapPanel>
             </GroupBox>
 
@@ -177,7 +177,7 @@ $XAML = @"
         <!-- Status Bar -->
         <StatusBar Grid.Row="4" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
             <StatusBarItem>
-                <Label Name="lblStatus" Content="Ready — enter a hostname or IP above" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
+                <Label Name="lblStatus" Content="Ready  -  enter a hostname or IP above" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
             </StatusBarItem>
         </StatusBar>
     </Grid>
@@ -408,7 +408,7 @@ function Update-ConnectionStatus {
                 $txtHostname.Items.Insert(0, $sanitizedInput)
             }
 
-            $lblStatus.Content = "$sanitizedInput — $($statusDetails -join ' | ')"
+            $lblStatus.Content = "$sanitizedInput  -  $($statusDetails -join ' | ')"
             $terminalOutputBox.Text = "Connection to $sanitizedInput successful. ($($statusDetails -join ', '))"
             [Logger]::Info("Successful connection test to $sanitizedInput")
         } else {
@@ -1453,7 +1453,7 @@ $btnLogOff.Add_Click({
 # Clear Output Button Click Event
 $btnClearOutput.Add_Click({
     $terminalOutputBox.Text = ""
-    $lblStatus.Content = "Ready — enter a hostname or IP above"
+    $lblStatus.Content = "Ready  -  enter a hostname or IP above"
     $txtHostname.Background = [System.Windows.Media.Brushes]::White
 })
 
