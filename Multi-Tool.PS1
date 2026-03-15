@@ -2,6 +2,7 @@
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName Microsoft.VisualBasic
 
 # Security and Utility Classes
 class InputValidator {
@@ -9,7 +10,7 @@ class InputValidator {
         return $hostname -match '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
     }
 
-    static [bool] IsValidIPv4([string] $ip) {
+    static [bool] IsValidIPv8([string] $ip) {
         return $ip -match '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
     }
 
@@ -55,55 +56,130 @@ $Global:AppConfig = @{
 $XAML = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Multi_Tool" Height="650" Width="900" Background="#012456">
+        Title="Multi-Tool" Height="800" Width="950" MinWidth="800" MinHeight="650"
+        Background="#012456" ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <!-- Button style with rounded corners and hover effect -->
+        <Style x:Key="ToolBtn" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Width" Value="175"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Name="bd" Background="#1E3A5F" BorderBrush="#4A90D9" BorderThickness="1" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#4A90D9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#2E6DA4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- GroupBox style -->
+        <Style x:Key="GroupHeader" TargetType="GroupBox">
+            <Setter Property="Foreground" Value="#4A90D9"/>
+            <Setter Property="BorderBrush" Value="#2A5A8F"/>
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Status Label -->
-        <Label Name="lblStatus" Content="Enter IP or Hostname" Foreground="White" FontSize="14" HorizontalAlignment="Center" Grid.Row="0"/>
-
-        <!-- Hostname/IP Input -->
-        <StackPanel Orientation="Horizontal" Grid.Row="1" HorizontalAlignment="Center">
-            <TextBox Name="txtHostname" Width="300" Height="30" TextAlignment="Center" />
-            <Button Name="btnResolve" Content="Resolve" Width="100" Margin="10,0,0,0"/>
+        <!-- Input Row -->
+        <StackPanel Orientation="Horizontal" Grid.Row="0" HorizontalAlignment="Center" Margin="0,10,0,8">
+            <ComboBox Name="txtHostname" Width="320" Height="32" IsEditable="True" Text="Enter Hostname/IP" Background="White" FontSize="13" VerticalContentAlignment="Center"/>
+            <Button Name="btnResolve" Content="Resolve" Width="100" Height="32" Margin="8,0,0,0" Style="{StaticResource ToolBtn}" ToolTip="Resolve hostname to IP or IP to hostname"/>
         </StackPanel>
 
-        <!-- Button Grid -->
-        <WrapPanel Grid.Row="2" HorizontalAlignment="Center">
-            <Button Name="btnPing" Content="Ping" Width="130" Margin="5"/>
-            <Button Name="btnGetSystemInfo" Content="Get System Info" Width="180" Margin="5"/>
-            <Button Name="btnGetUpTime" Content="Get Up Time" Width="180" Margin="5"/>
-            <Button Name="btnOpenPSSession" Content="Open PS Session" Width="180" Margin="5"/>
-            <Button Name="btnGpUpdate" Content="Run GPUpdate" Width="180" Margin="5"/>
-            <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Width="180" Margin="5"/>
-            <Button Name="btnMSRA" Content="Launch MSRA" Width="180" Margin="5"/>
-            <Button Name="btnRDC" Content="Launch RDC" Width="180" Margin="5"/>
-            <Button Name="btnEventLog" Content="Open Event Log" Width="180" Margin="5"/>
-            <Button Name="btnIncident" Content="Open IncidentIQ" Width="150" Margin="5"/>
-            <Button Name="btnFixMDT" Content="Fix MDT Error" Width="180" Margin="5"/>
-            <Button Name="btnShowCurrentUser" Content="Show Current User" Width="180" Margin="5"/>
-            <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Width="180" Margin="5"/>
-            <Button Name="btnClearDNS" Content="Clear DNS Cache" Width="180" Margin="5"/>
-            <Button Name="btnShutdown" Content="Remote Shutdown" Width="180" Margin="5"/>
-            <Button Name="btnGetComputerInfo" Content="Computer AD Info" Width="180" Margin="5"/>
-            <Button Name="btnFirewallStatus" Content="Firewall Status" Width="180" Margin="5"/>
-            <Button Name="btnBitLockerStatus" Content="BitLocker Status" Width="180" Margin="5"/>
-            <Button Name="btnDefenderStatus" Content="Defender Status" Width="180" Margin="5"/>
-        </WrapPanel>
+        <!-- Grouped Buttons (2x2 Grid) -->
+        <Grid Grid.Row="1" Margin="4,0,4,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Diagnostics -->
+            <GroupBox Header="Diagnostics" Grid.Column="0" Grid.Row="0" Style="{StaticResource GroupHeader}">
+                <WrapPanel>
+                    <Button Name="btnPing" Content="Ping" Style="{StaticResource ToolBtn}" ToolTip="Test connectivity: DNS, ping, and WinRM reachability"/>
+                    <Button Name="btnGetSystemInfo" Content="Get System Info" Style="{StaticResource ToolBtn}" ToolTip="OS, CPU, RAM, disk, and network adapter info"/>
+                    <Button Name="btnGetUpTime" Content="Get Up Time" Style="{StaticResource ToolBtn}" ToolTip="How long the remote machine has been running since last boot"/>
+                    <Button Name="btnFirewallStatus" Content="Firewall Status" Style="{StaticResource ToolBtn}" ToolTip="Check Windows Firewall state for Domain, Private, and Public profiles"/>
+                </WrapPanel>
+            </GroupBox>
+
+            <!-- Remote Tools -->
+            <GroupBox Header="Remote Tools" Grid.Column="1" Grid.Row="0" Style="{StaticResource GroupHeader}">
+                <WrapPanel>
+                    <Button Name="btnOpenPSSession" Content="Open PS Session" Style="{StaticResource ToolBtn}" ToolTip="Open an interactive PowerShell remoting session in a new window"/>
+                    <Button Name="btnMSRA" Content="Launch MSRA" Style="{StaticResource ToolBtn}" ToolTip="Offer Remote Assistance to the target machine (requires Remote Assistance feature)"/>
+                    <Button Name="btnRDC" Content="Launch RDC" Style="{StaticResource ToolBtn}" ToolTip="Connect via Remote Desktop Connection (mstsc)"/>
+                    <Button Name="btnEventLog" Content="Open Event Log" Style="{StaticResource ToolBtn}" ToolTip="Open Event Viewer connected to the remote machine"/>
+                </WrapPanel>
+            </GroupBox>
+
+            <!-- Management -->
+            <GroupBox Header="Management" Grid.Column="0" Grid.Row="1" Style="{StaticResource GroupHeader}">
+                <WrapPanel>
+                    <Button Name="btnGpUpdate" Content="Run GPUpdate" Style="{StaticResource ToolBtn}" ToolTip="Force Group Policy refresh on remote machine (gpupdate /force)"/>
+                    <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Style="{StaticResource ToolBtn}" ToolTip="List all installed software from registry (requires credentials)"/>
+                    <Button Name="btnLogOff" Content="Remote Log Off" Style="{StaticResource ToolBtn}" ToolTip="View active sessions and log off a user remotely"/>
+                    <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Style="{StaticResource ToolBtn}" ToolTip="Stop Print Spooler, clear all stuck jobs, restart Spooler"/>
+                    <Button Name="btnClearDNS" Content="Clear DNS Cache" Style="{StaticResource ToolBtn}" ToolTip="Flush DNS resolver cache on remote machine (ipconfig /flushdns)"/>
+                    <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}" ToolTip="Restart the remote machine — confirmation required"/>
+                </WrapPanel>
+            </GroupBox>
+
+            <!-- Utilities -->
+            <GroupBox Header="Utilities" Grid.Column="1" Grid.Row="1" Style="{StaticResource GroupHeader}">
+                <WrapPanel>
+                    <Button Name="btnIncident" Content="Open IncidentIQ" Style="{StaticResource ToolBtn}" ToolTip="Open the IncidentIQ ticketing portal in your browser"/>
+                    <Button Name="btnFixMDT" Content="Fix MDT Error" Style="{StaticResource ToolBtn}" ToolTip="Remove MDT/WDT deployment artifacts from remote machine (requires credentials)"/>
+                    <Button Name="btnClearOutput" Content="Clear Output" Style="{StaticResource ToolBtn}" ToolTip="Clear the output box and reset status"/>
+                    <Button Name="btnCopyOutput" Content="Copy to Clipboard" Style="{StaticResource ToolBtn}" ToolTip="Copy output box contents to clipboard"/>
+                </WrapPanel>
+            </GroupBox>
+        </Grid>
 
         <!-- Progress Bar -->
-        <ProgressBar Name="progressBar" Grid.Row="3" Width="850" Height="20" Margin="5" Visibility="Hidden" Maximum="100" Minimum="0"/>
+        <ProgressBar Name="progressBar" Grid.Row="2" Margin="10,0,10,6" Height="5"
+                     Visibility="Hidden" Maximum="100" Minimum="0"
+                     Foreground="#4A90D9" Background="#1E3A5F"/>
 
-        <!-- Output Box -->
-        <TextBox Name="terminalOutputBox" Grid.Row="4" Width="850" Height="250" IsReadOnly="True"
-                 VerticalScrollBarVisibility="Auto" Background="Black" Foreground="White"
-                 AcceptsReturn="True" TextWrapping="Wrap"/>
+        <!-- Output Box (expands with window) -->
+        <TextBox Name="terminalOutputBox" Grid.Row="3" Margin="10,0,10,6" IsReadOnly="True"
+                 VerticalScrollBarVisibility="Auto" Background="#0D0D0D" Foreground="#D4D4D4"
+                 AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
+                 BorderBrush="#2A5A8F" BorderThickness="1" Padding="6"/>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="4" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
+            <StatusBarItem>
+                <Label Name="lblStatus" Content="Ready — enter a hostname or IP above" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
+            </StatusBarItem>
+        </StatusBar>
     </Grid>
 </Window>
 "@
@@ -113,6 +189,7 @@ $Window = [System.Windows.Markup.XamlReader]::Load([System.Xml.XmlReader]::Creat
 
 # Retrieve controls
 $txtHostname = $Window.FindName("txtHostname")
+$lblStatus = $Window.FindName("lblStatus")
 $btnResolve = $Window.FindName("btnResolve")
 $btnPing = $Window.FindName("btnPing")
 $btnGetSystemInfo = $Window.FindName("btnGetSystemInfo")
@@ -126,14 +203,13 @@ $btnIncident = $Window.FindName("btnIncident")
 $btnGetInstalledSoftware = $Window.FindName("btnGetInstalledSoftware")
 $btnGetUpTime = $Window.FindName("btnGetUpTime")
 $btnFixMDT = $Window.FindName("btnFixMDT")
-$btnShowCurrentUser = $Window.FindName("btnShowCurrentUser")
+$btnLogOff = $Window.FindName("btnLogOff")
 $btnClearPrintQueue = $Window.FindName("btnClearPrintQueue")
 $btnClearDNS = $Window.FindName("btnClearDNS")
-$btnShutdown = $Window.FindName("btnShutdown")
-$btnGetComputerInfo = $Window.FindName("btnGetComputerInfo")
+$btnRestart = $Window.FindName("btnRestart")
 $btnFirewallStatus = $Window.FindName("btnFirewallStatus")
-$btnBitLockerStatus = $Window.FindName("btnBitLockerStatus")
-$btnDefenderStatus = $Window.FindName("btnDefenderStatus")
+$btnClearOutput = $Window.FindName("btnClearOutput")
+$btnCopyOutput = $Window.FindName("btnCopyOutput")
 $progressBar = $Window.FindName("progressBar")
 
 # Utility Functions
@@ -274,6 +350,26 @@ function Get-LoggedInUserAndMachineInfo {
     $txtHostname.Text = "$hostname - $currentUser"
 }
 
+# Host history helpers
+function Load-HostHistory {
+    $historyPath = "$env:APPDATA\MultiTool\hostHistory.txt"
+    if (Test-Path $historyPath) {
+        return Get-Content $historyPath | Select-Object -First 10
+    }
+    return @()
+}
+
+function Save-HostHistory {
+    param([string]$hostname)
+    $historyPath = "$env:APPDATA\MultiTool\hostHistory.txt"
+    $dir = Split-Path $historyPath
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $existing = @()
+    if (Test-Path $historyPath) { $existing = Get-Content $historyPath }
+    $updated = @($hostname) + ($existing | Where-Object { $_ -ne $hostname }) | Select-Object -First 10
+    $updated | Set-Content $historyPath
+}
+
 # Function to check connection status and update TextBox background
 function Update-ConnectionStatus {
     param($hostnameOrIp)
@@ -296,6 +392,23 @@ function Update-ConnectionStatus {
             if ($connectivityTest.CanPing) { $statusDetails += "Ping: OK" }
             if ($connectivityTest.CanWinRM) { $statusDetails += "WinRM: OK" }
             if ($connectivityTest.CanResolve) { $statusDetails += "DNS: OK" }
+
+            # Try to get logged-in user via quser (no AD/CIM dependency)
+            try {
+                $quserResult = Invoke-Command -ComputerName $sanitizedInput -ScriptBlock {
+                    quser 2>$null | Select-Object -Skip 1 | ForEach-Object {
+                        if ($_ -match '^\s*>?\s*(\S+)') { $matches[1] }
+                    } | Select-Object -First 1
+                } -ErrorAction SilentlyContinue
+                if ($quserResult) { $statusDetails += "User: $quserResult" }
+            } catch { }
+
+            Save-HostHistory -hostname $sanitizedInput
+            if (-not $txtHostname.Items.Contains($sanitizedInput)) {
+                $txtHostname.Items.Insert(0, $sanitizedInput)
+            }
+
+            $lblStatus.Content = "$sanitizedInput — $($statusDetails -join ' | ')"
             $terminalOutputBox.Text = "Connection to $sanitizedInput successful. ($($statusDetails -join ', '))"
             [Logger]::Info("Successful connection test to $sanitizedInput")
         } else {
@@ -540,33 +653,11 @@ $btnEventLog.Add_Click({
     }
 
     try {
-        # Create a temporary MSC file with Event Viewer configured for remote computer
-        $mscContent = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<MMC_CONSOLE_FILE ConsoleVersion="2.0">
-<Console>
-<ConsoleTree>
-<NodeData>
-<NodeType>Microsoft.EventViewer</NodeType>
-<NodeData>
-<ComputerName>$hostnameOrIp</ComputerName>
-</NodeData>
-</NodeData>
-</ConsoleTree>
-</Console>
-</MMC_CONSOLE_FILE>
-"@
-
-        $tempMscPath = "$env:TEMP\EventViewer_$hostnameOrIp.msc"
-        $mscContent | Out-File -FilePath $tempMscPath -Encoding UTF8 -Force
-
-        # Launch MMC with the configured Event Viewer
-        Start-Process "mmc.exe" -ArgumentList $tempMscPath
-
-        $terminalOutputBox.Text = "Opening Event Log for $hostnameOrIp."
-        [Logger]::Info("Opened Event Log for $hostnameOrIp")
+        Start-Process "eventvwr.msc" -ArgumentList "/computer:$hostnameOrIp"
+        $terminalOutputBox.Text = "Opening Event Viewer for $hostnameOrIp."
+        [Logger]::Info("Opened Event Viewer for $hostnameOrIp")
     } catch {
-        $errorMessage = "Error opening Event Log for ${hostnameOrIp}: $($_.Exception.Message)"
+        $errorMessage = "Error opening Event Viewer for ${hostnameOrIp}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
     }
@@ -1061,74 +1152,6 @@ $btnFixMDT.Add_Click({
     }
 })
 
-# Show Current User Button Click Event
-$btnShowCurrentUser.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        [Logger]::Info("Querying current user on $remoteMachine")
-
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
-            $currentUser = $computerSystem.UserName
-
-            # Get session information using quser
-            $quserOutput = quser 2>$null
-
-            # Parse quser output to get session details
-            $sessionInfo = ""
-            if ($quserOutput) {
-                $sessionInfo = $quserOutput | Out-String
-            }
-
-            # Get logon time from Win32_LogonSession
-            try {
-                $logonSessions = Get-CimInstance -ClassName Win32_LogonSession | Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 }
-                $latestLogon = $logonSessions | Sort-Object StartTime -Descending | Select-Object -First 1
-
-                if ($latestLogon) {
-                    $logonTime = [Management.ManagementDateTimeConverter]::ToDateTime($latestLogon.StartTime)
-                    $duration = (Get-Date) - $logonTime
-                    $sessionDuration = "{0:D2}h {1:D2}m" -f $duration.Hours, $duration.Minutes
-                } else {
-                    $sessionDuration = "Unknown"
-                }
-            } catch {
-                $sessionDuration = "Unknown"
-            }
-
-            $output = @(
-                "Current User Information:",
-                "=" * 50,
-                "Logged In User: $(if ($currentUser) { $currentUser } else { 'No user logged in' })",
-                "Session Duration: $sessionDuration",
-                "",
-                "Session Details:",
-                "-" * 50,
-                $sessionInfo
-            ) -join "`r`n"
-
-            return $output
-        } -OperationName "Get Current User"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error querying current user on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
 # Clear Print Queue Button Click Event
 $btnClearPrintQueue.Add_Click({
     try {
@@ -1275,117 +1298,40 @@ $btnClearDNS.Add_Click({
     }
 })
 
-# Remote Shutdown Button Click Event
-$btnShutdown.Add_Click({
+# Remote Restart Button Click Event
+$btnRestart.Add_Click({
     try {
         $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
         if (Validate-Hostname $remoteMachine) {
             $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
             return
         }
-
         $confirmResult = [System.Windows.MessageBox]::Show(
-            "This will SHUT DOWN $remoteMachine immediately.`r`n`r`nThe computer will power off and any unsaved work will be lost.`r`n`r`nAre you sure you want to continue?",
-            "Confirm Shutdown",
+            "This will RESTART $remoteMachine.`r`n`r`nUnsaved work will be lost.`r`n`r`nContinue?",
+            "Confirm Restart",
             [System.Windows.MessageBoxButton]::YesNo,
-            [System.Windows.MessageBoxImage]::Stop
+            [System.Windows.MessageBoxImage]::Warning
         )
-
         if ($confirmResult -ne [System.Windows.MessageBoxResult]::Yes) {
-            $terminalOutputBox.Text = "Shutdown operation cancelled."
+            $terminalOutputBox.Text = "Restart cancelled."
             return
         }
-
-        [Logger]::Info("Initiating shutdown on $remoteMachine")
-        $terminalOutputBox.Text = "Initiating shutdown on ${remoteMachine}..."
-
-        try {
-            Stop-Computer -ComputerName $remoteMachine -Force -ErrorAction Stop
-            $terminalOutputBox.Text = @(
-                "Shutdown Command Sent Successfully",
-                "=" * 50,
-                "Computer: $remoteMachine",
-                "Action: Shutdown",
-                "Status: Command executed successfully",
-                "",
-                "The remote computer should shut down within a few seconds."
-            ) -join "`r`n"
-            [Logger]::Info("Shutdown command sent successfully to $remoteMachine")
-        }
-        catch {
-            $terminalOutputBox.Text = "ERROR: Failed to shutdown $remoteMachine`r`n$($_.Exception.Message)"
-            [Logger]::Error("Shutdown failed for ${remoteMachine}: $($_.Exception.Message)")
-        }
+        [Logger]::Info("Initiating restart on $remoteMachine")
+        Restart-Computer -ComputerName $remoteMachine -Force -ErrorAction Stop
+        $terminalOutputBox.Text = @(
+            "Restart Command Sent Successfully",
+            "=" * 50,
+            "Computer: $remoteMachine",
+            "Action: Restart",
+            "Status: Command executed successfully",
+            "",
+            "The remote computer should restart within a few seconds."
+        ) -join "`r`n"
+        [Logger]::Info("Restart command sent successfully to $remoteMachine")
     }
     catch {
-        $errorMessage = "Error during shutdown operation for ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Computer AD Info Button Click Event
-$btnGetComputerInfo.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
-            return
-        }
-
-        [Logger]::Info("Querying Active Directory computer information for $remoteMachine")
-        $terminalOutputBox.Text = "Querying Active Directory information for ${remoteMachine}..."
-
-        try {
-            $computerInfo = Get-ADComputer -Identity $remoteMachine -Properties * -ErrorAction Stop
-
-            $output = @(
-                "Active Directory Computer Information:",
-                "=" * 50,
-                "Computer Name: $($computerInfo.Name)",
-                "DNS Hostname: $($computerInfo.DNSHostName)",
-                "Distinguished Name: $($computerInfo.DistinguishedName)",
-                "",
-                "Operating System:",
-                "  OS: $($computerInfo.OperatingSystem)",
-                "  Version: $($computerInfo.OperatingSystemVersion)",
-                "  Service Pack: $($computerInfo.OperatingSystemServicePack)",
-                "",
-                "Account Information:",
-                "  Enabled: $($computerInfo.Enabled)",
-                "  Created: $($computerInfo.Created)",
-                "  Modified: $($computerInfo.Modified)",
-                "  Last Logon: $($computerInfo.LastLogonDate)",
-                "  Password Last Set: $($computerInfo.PasswordLastSet)",
-                "",
-                "Location:",
-                "  Organizational Unit: $($computerInfo.DistinguishedName -replace '^CN=[^,]+,','')",
-                "  Description: $($computerInfo.Description)",
-                "  Location: $($computerInfo.Location)",
-                "",
-                "Security:",
-                "  SID: $($computerInfo.SID.Value)"
-            ) -join "`r`n"
-
-            $terminalOutputBox.Text = $output
-            [Logger]::Info("Successfully retrieved AD info for $remoteMachine")
-        }
-        catch {
-            if ($_.Exception.Message -match "Cannot find an object") {
-                $terminalOutputBox.Text = "ERROR: Computer account '$remoteMachine' not found in Active Directory.`r`n`r`nPlease verify:`r`n- Computer name is correct`r`n- Computer is joined to the domain`r`n- You have permission to query AD"
-            }
-            else {
-                $terminalOutputBox.Text = "ERROR: Failed to query Active Directory`r`n$($_.Exception.Message)"
-            }
-            [Logger]::Error("AD query failed for ${remoteMachine}: $($_.Exception.Message)")
-        }
-    }
-    catch {
-        $errorMessage = "Error querying AD computer info for ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
+        $terminalOutputBox.Text = "ERROR: Failed to restart ${remoteMachine}`r`n$($_.Exception.Message)"
+        [Logger]::Error("Restart failed for ${remoteMachine}: $($_.Exception.Message)")
     }
 })
 
@@ -1451,201 +1397,90 @@ $btnFirewallStatus.Add_Click({
     }
 })
 
-# BitLocker Status Button Click Event
-$btnBitLockerStatus.Add_Click({
+
+# Remote Log Off Button Click Event
+$btnLogOff.Add_Click({
     try {
         $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
         if (Validate-Hostname $remoteMachine) {
             $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
             return
         }
 
-        [Logger]::Info("Querying BitLocker status on $remoteMachine")
-        $terminalOutputBox.Text = "Querying BitLocker encryption status on ${remoteMachine}..."
+        [Logger]::Info("Querying sessions on $remoteMachine for log off")
+        $terminalOutputBox.Text = "Querying active sessions on ${remoteMachine}..."
 
         $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            try {
-                $volumes = Get-BitLockerVolume -ErrorAction Stop
+            $sessions = quser 2>$null
+            if (-not $sessions) { return "No active user sessions found." }
 
-                $output = @(
-                    "BitLocker Encryption Status:",
-                    "=" * 50
-                )
+            $output = @("Active sessions on $env:COMPUTERNAME:", "-" * 40)
+            $output += $sessions
+            return $output -join "`r`n"
+        } -OperationName "Query Sessions"
 
-                foreach ($volume in $volumes) {
-                    $output += ""
-                    $output += "Drive: $($volume.MountPoint)"
-                    $output += "  Volume Status: $($volume.VolumeStatus)"
-                    $output += "  Encryption Method: $($volume.EncryptionMethod)"
-                    $output += "  Encryption Percentage: $($volume.EncryptionPercentage)%"
-                    $output += "  Protection Status: $($volume.ProtectionStatus)"
-                    $output += "  Key Protectors: $($volume.KeyProtector.Count) configured"
-                    $output += "  Lock Status: $($volume.LockStatus)"
-                }
-
-                $output += ""
-                $output += "=" * 50
-
-                $encryptedCount = ($volumes | Where-Object { $_.VolumeStatus -eq "FullyEncrypted" }).Count
-                $totalCount = $volumes.Count
-
-                $output += "Summary: $encryptedCount of $totalCount volume(s) fully encrypted"
-
-                return $output -join "`r`n"
-            }
-            catch {
-                return "ERROR: Unable to query BitLocker status.`r`n`r`nPossible reasons:`r`n- BitLocker is not available on this system`r`n- Insufficient permissions`r`n- BitLocker service not running`r`n`r`nDetails: $($_.Exception.Message)"
-            }
-        } -OperationName "Get BitLocker Status"
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-        } else {
+        if (-not $result.Success) {
             $terminalOutputBox.Text = "ERROR: $($result.Message)"
-        }
-    }
-    catch {
-        $errorMessage = "Error querying BitLocker status on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-})
-
-# Windows Defender Status Button Click Event
-$btnDefenderStatus.Add_Click({
-    try {
-        $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
-
-        if (Validate-Hostname $remoteMachine) {
-            $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
             return
         }
 
-        [Logger]::Info("Querying Windows Defender status and threats on $remoteMachine")
-        $terminalOutputBox.Text = "Querying Windows Defender status on ${remoteMachine}..."
-        $progressBar.Visibility = [System.Windows.Visibility]::Visible
-        $progressBar.Value = 10
+        $terminalOutputBox.Text = $result.Data
 
-        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
-            try {
-                # Get Defender service status
-                $service = Get-Service -Name WinDefend -ErrorAction SilentlyContinue
-                $serviceStatus = if ($service) { $service.Status } else { "Not Available" }
-
-                # Get Defender configuration status
-                $status = Get-MpComputerStatus -ErrorAction Stop
-
-                $output = @(
-                    "=== Windows Defender Status for $env:COMPUTERNAME ===",
-                    "",
-                    "Service Status: $serviceStatus",
-                    "Real-Time Protection: $(if ($status.RealTimeProtectionEnabled) { 'Enabled' } else { 'DISABLED' })",
-                    "Last Quick Scan: $($status.QuickScanEndTime)",
-                    "Last Full Scan: $($status.FullScanEndTime)",
-                    "",
-                    "Antivirus Signature Version: $($status.AntivirusSignatureVersion)",
-                    "Signature Last Updated: $($status.AntivirusSignatureLastUpdated)",
-                    "Signature Age (days): $($status.AntivirusSignatureAge)",
-                    "",
-                    "Behavior Monitor: $(if ($status.BehaviorMonitorEnabled) { 'Enabled' } else { 'Disabled' })",
-                    "On Access Protection: $(if ($status.OnAccessProtectionEnabled) { 'Enabled' } else { 'Disabled' })",
-                    "I/O Protection: $(if ($status.IoavProtectionEnabled) { 'Enabled' } else { 'Disabled' })",
-                    "",
-                    "=== Recent Threats (Last 24 Hours) ===",
-                    ""
-                )
-
-                # Query Defender event log for threats (Event ID 1116)
-                $yesterday = (Get-Date).AddDays(-1)
-                $threatEvents = @()
-
-                try {
-                    $threatEvents = Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -ErrorAction Stop |
-                        Where-Object { $_.Id -eq 1116 -and $_.TimeCreated -ge $yesterday }
-                } catch {
-                    $output += "[WARNING] Could not query Defender event log: $($_.Exception.Message)"
-                    $output += ""
-                }
-
-                if ($threatEvents.Count -eq 0) {
-                    $output += "[+] No threats detected in the last 24 hours"
-                } else {
-                    $output += "[!] $($threatEvents.Count) threat(s) detected in the last 24 hours:"
-                    $output += ""
-
-                    foreach ($event in $threatEvents) {
-                        $output += "[!] THREAT DETECTED"
-                        $output += "    Time: $($event.TimeCreated)"
-
-                        # Extract threat details from event properties
-                        # Event 1116 structure: Properties[0] = Threat Name, Properties[1] = Severity, etc.
-                        if ($event.Properties.Count -ge 2) {
-                            $threatName = if ($event.Properties[0].Value) { $event.Properties[0].Value } else { "Unknown" }
-                            $output += "    Threat: $threatName"
-                        }
-
-                        if ($event.Properties.Count -ge 7) {
-                            $threatPath = if ($event.Properties[6].Value) { $event.Properties[6].Value } else { "Unknown" }
-                            $output += "    Path: $threatPath"
-                        }
-
-                        if ($event.Properties.Count -ge 14) {
-                            $action = if ($event.Properties[13].Value) { $event.Properties[13].Value } else { "Unknown" }
-                            $output += "    Action: $action"
-                        }
-
-                        $output += ""
-                    }
-                }
-
-                # Add health summary
-                $output += "=== Health Summary ==="
-                $issues = @()
-                if ($serviceStatus -ne "Running") { $issues += "Windows Defender service is not running" }
-                if (-not $status.RealTimeProtectionEnabled) { $issues += "Real-Time Protection is DISABLED" }
-                if ($status.AntivirusSignatureAge -gt 7) { $issues += "Definitions are outdated (>7 days old)" }
-                if (-not $status.AntivirusEnabled) { $issues += "Antivirus is DISABLED" }
-                if ($threatEvents.Count -gt 0) { $issues += "$($threatEvents.Count) threat(s) detected in last 24 hours" }
-
-                if ($issues.Count -eq 0) {
-                    $output += "Status: HEALTHY - All checks passed"
-                }
-                else {
-                    $output += "Status: ATTENTION REQUIRED"
-                    $output += ""
-                    $output += "Issues:"
-                    foreach ($issue in $issues) {
-                        $output += "  - $issue"
-                    }
-                }
-
-                return $output -join "`r`n"
-            }
-            catch {
-                return "ERROR: Unable to query Windows Defender.`r`n`r`nPossible reasons:`r`n- Windows Defender is not available on this system`r`n- Third-party antivirus is installed`r`n- Insufficient permissions`r`n`r`nDetails: $($_.Exception.Message)"
-            }
-        } -OperationName "Get Defender Status and Threats"
-
-        $progressBar.Value = 90
-
-        if ($result.Success) {
-            $terminalOutputBox.Text = $result.Data
-            [Logger]::Info("Successfully retrieved Defender status and threats for $remoteMachine")
-        } else {
-            $terminalOutputBox.Text = "ERROR: $($result.Message)"
-            [Logger]::Error("Failed to retrieve Defender status for ${remoteMachine}: $($result.Message)")
+        $sessionInput = [Microsoft.VisualBasic.Interaction]::InputBox(
+            "Enter the session ID to log off (see list above):",
+            "Remote Log Off",
+            ""
+        )
+        if (-not $sessionInput -or $sessionInput -notmatch '^\d+$') {
+            $terminalOutputBox.Text = "Log off cancelled or invalid session ID."
+            return
         }
+
+        Invoke-Command -ComputerName $remoteMachine -ScriptBlock {
+            param($sid)
+            logoff $sid 2>&1 | Out-Null
+        } -ArgumentList $sessionInput -ErrorAction Stop
+
+        $terminalOutputBox.Text = "Session $sessionInput logged off successfully on $remoteMachine."
+        [Logger]::Info("Logged off session $sessionInput on $remoteMachine")
     }
     catch {
-        $errorMessage = "Error querying Windows Defender on ${remoteMachine}: $($_.Exception.Message)"
-        $terminalOutputBox.Text = $errorMessage
-        [Logger]::Error($errorMessage)
-    }
-    finally {
-        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
+        $terminalOutputBox.Text = "ERROR: $($_.Exception.Message)"
+        [Logger]::Error("Log off failed on ${remoteMachine}: $($_.Exception.Message)")
     }
 })
+
+# Clear Output Button Click Event
+$btnClearOutput.Add_Click({
+    $terminalOutputBox.Text = ""
+    $lblStatus.Content = "Ready — enter a hostname or IP above"
+    $txtHostname.Background = [System.Windows.Media.Brushes]::White
+})
+
+# Copy to Clipboard Button Click Event
+$btnCopyOutput.Add_Click({
+    if ($terminalOutputBox.Text) {
+        Set-Clipboard -Value $terminalOutputBox.Text
+        $lblStatus.Content = "Output copied to clipboard."
+    } else {
+        $lblStatus.Content = "Nothing to copy."
+    }
+})
+
+# Clear ComboBox placeholder on focus
+$txtHostname.Add_GotFocus({
+    if ($txtHostname.Text -eq "Enter Hostname/IP") {
+        $txtHostname.Text = ""
+    }
+})
+$txtHostname.Add_LostFocus({
+    if ($txtHostname.Text -eq "") {
+        $txtHostname.Text = "Enter Hostname/IP"
+    }
+})
+
+# Populate recent hosts dropdown
+Load-HostHistory | ForEach-Object { $txtHostname.Items.Add($_) }
 
 # Show the window
 $Window.ShowDialog()

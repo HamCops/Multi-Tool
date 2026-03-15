@@ -49,7 +49,7 @@ The application is entirely self-contained in `Multi-Tool.PS1` (~1650 lines) wit
 3. **Remote Management**: PowerShell sessions, GPUpdate, Event Viewer
 4. **Remote Tools**: MSRA (Remote Assistance), RDC (Remote Desktop Connection)
 5. **Windows 11 Upgrade**: Downloads and launches Windows 11 setup assistant
-6. **MDT/WDT Cleanup**: Integrates with `Fix-MDT-Startup-Error.ps1` for deployment artifact removal
+6. **MDT/WDT Cleanup**: Fully embedded scriptblock executed via `Invoke-Command` for deployment artifact removal
 
 ## Running and Testing
 
@@ -244,10 +244,10 @@ The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires
 3. **Update PowerShell modules**: Ensure RSAT tools and ActiveDirectory module are up-to-date
 4. **Query properties individually**: Instead of requesting multiple properties at once, query them one at a time with error suppression for each
 
-**Removed Features** (due to AD corruption in target environment):
-- Computer AD Info button (Get-ADComputer queries)
-- Windows Defender Status button (Get-MpComputerStatus queries)  
-- Show Current User button (Get-CimInstance Win32_ComputerSystem queries)
+**Disabled Features** (buttons remain in XAML but handlers are non-functional due to AD corruption in target environment):
+- Computer AD Info (`btnGetComputerInfo`) — Get-ADComputer queries
+- Windows Defender Status (`btnDefenderStatus`) — Get-MpComputerStatus queries
+- Show Current User (`btnShowCurrentUser`) — Get-CimInstance Win32_ComputerSystem queries
 
 ## File Structure
 
