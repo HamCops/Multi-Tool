@@ -10,7 +10,7 @@ class InputValidator {
         return $hostname -match '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
     }
 
-    static [bool] IsValidIPv8([string] $ip) {
+    static [bool] IsValidIPv4([string] $ip) {
         return $ip -match '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
     }
 
