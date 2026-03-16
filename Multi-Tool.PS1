@@ -127,6 +127,8 @@ $XAML = @"
                     <Button Name="btnGetSystemInfo" Content="Get System Info" Style="{StaticResource ToolBtn}" ToolTip="OS, CPU, RAM, disk, and network adapter info"/>
                     <Button Name="btnGetUpTime" Content="Get Up Time" Style="{StaticResource ToolBtn}" ToolTip="How long the remote machine has been running since last boot"/>
                     <Button Name="btnFirewallStatus" Content="Firewall Status" Style="{StaticResource ToolBtn}" ToolTip="Check Windows Firewall state for Domain, Private, and Public profiles"/>
+                    <Button Name="btnHealthScan" Content="Health Scan" Style="{StaticResource ToolBtn}" ToolTip="Full diagnostic: connectivity, uptime, disk, RAM, user, firewall, battery"/>
+                    <Button Name="btnDiskCheck" Content="Disk Space Check" Style="{StaticResource ToolBtn}" ToolTip="Check all drives - warns if below 20% free"/>
                 </WrapPanel>
             </GroupBox>
 
@@ -210,6 +212,8 @@ $btnRestart = $Window.FindName("btnRestart")
 $btnFirewallStatus = $Window.FindName("btnFirewallStatus")
 $btnClearOutput = $Window.FindName("btnClearOutput")
 $btnCopyOutput = $Window.FindName("btnCopyOutput")
+$btnHealthScan = $Window.FindName("btnHealthScan")
+$btnDiskCheck = $Window.FindName("btnDiskCheck")
 $progressBar = $Window.FindName("progressBar")
 
 # Utility Functions
@@ -320,34 +324,6 @@ function Get-SystemInfoOptimized {
             Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
         }
     }
-}
-
-function Download-VerifiedFile {
-    param($Url, $OutputPath, $ExpectedHash = $null)
-
-    try {
-        Invoke-WebRequest -Uri $Url -OutFile $OutputPath -UseBasicParsing -ErrorAction Stop
-
-        if ($ExpectedHash) {
-            $actualHash = Get-FileHash -Path $OutputPath -Algorithm SHA256
-            if ($actualHash.Hash -ne $ExpectedHash) {
-                Remove-Item $OutputPath -Force
-                throw "File hash verification failed. Expected: $ExpectedHash, Actual: $($actualHash.Hash)"
-            }
-        }
-        return $true
-    }
-    catch {
-        [Logger]::Error("Download failed: $($_.Exception.Message)")
-        return $false
-    }
-}
-
-# Function to get machine IP/hostname
-function Get-LoggedInUserAndMachineInfo {
-    $hostname = $env:COMPUTERNAME
-    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $txtHostname.Text = "$hostname - $currentUser"
 }
 
 # Host history helpers
@@ -756,6 +732,157 @@ $btnGetUpTime.Add_Click({
         $errorMessage = "Error retrieving uptime for ${remoteMachine}: $($_.Exception.Message)"
         $terminalOutputBox.Text = $errorMessage
         [Logger]::Error($errorMessage)
+    }
+})
+
+# Disk Space Check Button Click Event
+$btnDiskCheck.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    [Logger]::Info("Running disk space check on $remoteMachine")
+    $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
+        $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
+        $output = @(
+            "Disk Space Report: $env:COMPUTERNAME",
+            "=" * 45,
+            ""
+        )
+        foreach ($disk in $disks) {
+            $totalGB = [math]::Round($disk.Size / 1GB, 1)
+            $freeGB  = [math]::Round($disk.FreeSpace / 1GB, 1)
+            $usedGB  = [math]::Round(($disk.Size - $disk.FreeSpace) / 1GB, 1)
+            $pctFree = if ($disk.Size -gt 0) { [math]::Round(($disk.FreeSpace / $disk.Size) * 100, 0) } else { 0 }
+            $filled  = [math]::Round((100 - $pctFree) / 5)
+            $bar     = "[" + ("#" * $filled) + ("-" * (20 - $filled)) + "]"
+            $status  = if ($pctFree -lt 10) { "!! CRITICAL - Immediate action needed" }
+                       elseif ($pctFree -lt 20) { "! WARNING - Running low" }
+                       else { "OK" }
+            $output += "Drive $($disk.DeviceID)"
+            $output += "  $bar  $pctFree% used"
+            $output += "  Total: $totalGB GB   Used: $usedGB GB   Free: $freeGB GB"
+            $output += "  Status: $status"
+            $output += ""
+        }
+        return $output -join "`r`n"
+    } -OperationName "Disk Space Check"
+
+    if ($result.Success) {
+        $terminalOutputBox.Text = $result.Data
+    } else {
+        $terminalOutputBox.Text = "ERROR: $($result.Message)"
+    }
+})
+
+# Health Scan Button Click Event
+$btnHealthScan.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    [Logger]::Info("Starting health scan on $remoteMachine")
+    $terminalOutputBox.Text = "Running health scan on ${remoteMachine}. Please wait..."
+    $progressBar.Visibility = [System.Windows.Visibility]::Visible
+    $progressBar.Value = 10
+
+    try {
+        $conn = Test-RemoteConnectivity -ComputerName $remoteMachine
+        $progressBar.Value = 30
+
+        $remoteData = Invoke-Command -ComputerName $remoteMachine -ErrorAction Stop -ScriptBlock {
+            $os       = Get-CimInstance Win32_OperatingSystem
+            $disks    = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
+            $battery  = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
+            $firewall = Get-NetFirewallProfile | Select-Object Name, Enabled
+            $user     = quser 2>$null | Select-Object -Skip 1 | ForEach-Object {
+                if ($_ -match '^\s*>?\s*(\S+)') { $matches[1] }
+            } | Select-Object -First 1
+            return @{ OS = $os; Disks = $disks; Battery = $battery; Firewall = $firewall; User = $user }
+        }
+        $progressBar.Value = 80
+
+        $uptime    = (Get-Date) - (Get-SafeDateTime -DateTimeValue $remoteData.OS.LastBootUpTime)
+        $uptimeStr = "{0}d {1}h {2}m" -f $uptime.Days, $uptime.Hours, $uptime.Minutes
+        $freeRamGB = [math]::Round($remoteData.OS.FreePhysicalMemory / 1MB, 1)
+        $totRamGB  = [math]::Round($remoteData.OS.TotalVisibleMemorySize / 1MB, 1)
+
+        $output = @(
+            "========================================",
+            "  HEALTH SCAN: $remoteMachine",
+            "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "========================================",
+            "",
+            "[CONNECTIVITY]",
+            "  Ping:  $(if ($conn.CanPing) { 'OK' } else { 'FAIL' })",
+            "  WinRM: $(if ($conn.CanWinRM) { 'OK' } else { 'FAIL' })",
+            "  DNS:   $(if ($conn.CanResolve) { 'OK' } else { 'FAIL' })",
+            "",
+            "[SYSTEM]",
+            "  OS:     $($remoteData.OS.Caption)",
+            "  Uptime: $uptimeStr",
+            "  User:   $(if ($remoteData.User) { $remoteData.User } else { 'None logged in' })",
+            "  RAM:    $freeRamGB GB free of $totRamGB GB",
+            ""
+        )
+
+        $output += "[DISK SPACE]"
+        $diskWarnings = @()
+        foreach ($disk in $remoteData.Disks) {
+            $totalGB = [math]::Round($disk.Size / 1GB, 1)
+            $freeGB  = [math]::Round($disk.FreeSpace / 1GB, 1)
+            $pctFree = if ($disk.Size -gt 0) { [math]::Round(($disk.FreeSpace / $disk.Size) * 100, 0) } else { 0 }
+            $flag    = if ($pctFree -lt 10) { " !! CRITICAL" } elseif ($pctFree -lt 20) { " ! WARNING" } else { "" }
+            $output += "  $($disk.DeviceID)  $freeGB GB free / $totalGB GB  ($pctFree% free)$flag"
+            if ($pctFree -lt 20) { $diskWarnings += $disk.DeviceID }
+        }
+        $output += ""
+
+        $output += "[FIREWALL]"
+        $fwDisabled = @()
+        foreach ($profile in $remoteData.Firewall) {
+            $fwState = if ($profile.Enabled) { "ENABLED" } else { "!! DISABLED"; $fwDisabled += $profile.Name }
+            $output += "  $($profile.Name): $fwState"
+        }
+        $output += ""
+
+        if ($remoteData.Battery) {
+            $output += "[BATTERY]"
+            foreach ($bat in $remoteData.Battery) {
+                $chargeStatus = switch ($bat.BatteryStatus) {
+                    1 { "Discharging" } 2 { "AC Power" } 3 { "Fully Charged" } default { "Unknown" }
+                }
+                $output += "  Charge: $($bat.EstimatedChargeRemaining)%   Status: $chargeStatus"
+            }
+            $output += ""
+        }
+
+        $issues = @()
+        if (-not $conn.CanPing)   { $issues += "Host not pingable" }
+        if (-not $conn.CanWinRM)  { $issues += "WinRM not responding" }
+        if ($diskWarnings)        { $issues += "Low disk space: $($diskWarnings -join ', ')" }
+        if ($fwDisabled)          { $issues += "Firewall disabled: $($fwDisabled -join ', ')" }
+
+        $output += "[SUMMARY]"
+        if ($issues.Count -eq 0) {
+            $output += "  No issues detected. System looks healthy."
+        } else {
+            $issues | ForEach-Object { $output += "  !! $_" }
+        }
+
+        $terminalOutputBox.Text = $output -join "`r`n"
+        [Logger]::Info("Health scan complete on $remoteMachine - $($issues.Count) issue(s) found")
+    }
+    catch {
+        $terminalOutputBox.Text = "ERROR during health scan: $($_.Exception.Message)"
+        [Logger]::Error("Health scan failed on ${remoteMachine}: $($_.Exception.Message)")
+    }
+    finally {
+        $progressBar.Visibility = [System.Windows.Visibility]::Hidden
     }
 })
 
