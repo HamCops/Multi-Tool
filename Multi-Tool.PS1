@@ -352,8 +352,15 @@ function Update-ConnectionStatus {
 
     # Validate and sanitize input
     $sanitizedInput = [InputValidator]::SanitizeInput($hostnameOrIp)
+
+    # Helper: sets color on both the ComboBox and its inner editable TextBox
+    function Set-HostnameColor($brush) {
+        $txtHostname.Background = $brush
+        if ($script:HostnameInnerBox) { $script:HostnameInnerBox.Background = $brush }
+    }
+
     if (-not [InputValidator]::IsValidHostnameOrIP($sanitizedInput)) {
-        $txtHostname.Background = [System.Windows.Media.Brushes]::Red
+        Set-HostnameColor ([System.Windows.Media.Brushes]::Red)
         $terminalOutputBox.Text = "Invalid hostname or IP address format."
         [Logger]::Warn("Invalid input provided: $hostnameOrIp")
         return
@@ -363,7 +370,7 @@ function Update-ConnectionStatus {
         $connectivityTest = Test-RemoteConnectivity -ComputerName $sanitizedInput -TimeoutSeconds $Global:AppConfig.Network.DefaultTimeout
 
         if ($connectivityTest.IsReachable) {
-            $txtHostname.Background = [System.Windows.Media.Brushes]::Green
+            Set-HostnameColor ([System.Windows.Media.Brushes]::Green)
             $statusDetails = @()
             if ($connectivityTest.CanPing) { $statusDetails += "Ping: OK" }
             if ($connectivityTest.CanWinRM) { $statusDetails += "WinRM: OK" }
@@ -388,12 +395,12 @@ function Update-ConnectionStatus {
             $terminalOutputBox.Text = "Connection to $sanitizedInput successful. ($($statusDetails -join ', '))"
             [Logger]::Info("Successful connection test to $sanitizedInput")
         } else {
-            $txtHostname.Background = [System.Windows.Media.Brushes]::DarkOrange
+            Set-HostnameColor ([System.Windows.Media.Brushes]::DarkOrange)
             $terminalOutputBox.Text = "Connection to $sanitizedInput failed. Host may be unreachable or WinRM disabled."
             [Logger]::Warn("Connection test failed for $sanitizedInput")
         }
     } catch {
-        $txtHostname.Background = [System.Windows.Media.Brushes]::Red
+        Set-HostnameColor ([System.Windows.Media.Brushes]::Red)
         $terminalOutputBox.Text = "Error testing connection: $($_.Exception.Message)"
         [Logger]::Error("Connection test error for ${sanitizedInput}: $($_.Exception.Message)")
     }
@@ -1582,6 +1589,7 @@ $btnClearOutput.Add_Click({
     $terminalOutputBox.Text = ""
     $lblStatus.Content = "Ready  -  enter a hostname or IP above"
     $txtHostname.Background = [System.Windows.Media.Brushes]::White
+    if ($script:HostnameInnerBox) { $script:HostnameInnerBox.Background = [System.Windows.Media.Brushes]::White }
 })
 
 # Copy to Clipboard Button Click Event
@@ -1608,6 +1616,12 @@ $txtHostname.Add_LostFocus({
 
 # Populate recent hosts dropdown
 Load-HostHistory | ForEach-Object { $txtHostname.Items.Add($_) }
+
+# Grab the inner editable TextBox after the ComboBox template is applied
+# Setting .Background on the ComboBox itself doesn't reach the text area
+$Window.Add_Loaded({
+    $script:HostnameInnerBox = $txtHostname.Template.FindName("PART_EditableTextBox", $txtHostname)
+})
 
 # Show the window
 $Window.ShowDialog()
