@@ -509,7 +509,7 @@ function global:Invoke-Async {
 
 # DispatcherTimer to poll runspace completion
 $script:AsyncTimer = New-Object System.Windows.Threading.DispatcherTimer
-$script:AsyncTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+$script:AsyncTimer.Interval = [TimeSpan]::FromMilliseconds(500)
 
 $script:AsyncTimer.Add_Tick({
     $completed = @()
@@ -561,6 +561,12 @@ $script:AsyncTimer.Add_Tick({
         Set-ButtonsEnabled -Enabled $true
         Show-Progress -Show $false
         $script:AsyncTimer.Stop()
+    }
+    elseif ($script:ActiveRunspaces.Count -gt 0) {
+        # Show live elapsed time in status bar
+        $running = $script:ActiveRunspaces[0]
+        $elapsed = [math]::Round(((Get-Date) - $running.StartTime).TotalSeconds, 0)
+        $lblStatus.Content = "[Running] $($running.Label) ... ${elapsed}s elapsed"
     }
 })
 
