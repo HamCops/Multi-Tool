@@ -202,7 +202,19 @@ $XAML = @"
         <TextBox Name="terminalOutputBox" Grid.Row="4" Margin="10,0,10,6" IsReadOnly="True"
                  VerticalScrollBarVisibility="Auto" Background="#0D0D0D" Foreground="#D4D4D4"
                  AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
-                 BorderBrush="#2A5A8F" BorderThickness="1" Padding="6"/>
+                 BorderBrush="#2A5A8F" BorderThickness="1" Padding="6">
+            <TextBox.ContextMenu>
+                <ContextMenu Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White">
+                    <MenuItem Name="ctxCopy" Header="Copy" InputGestureText="Ctrl+Shift+C"/>
+                    <MenuItem Name="ctxSelectAll" Header="Select All"/>
+                    <Separator/>
+                    <MenuItem Name="ctxSearch" Header="Search" InputGestureText="Ctrl+F"/>
+                    <MenuItem Name="ctxClear" Header="Clear" InputGestureText="Ctrl+L"/>
+                    <Separator/>
+                    <MenuItem Name="ctxSaveToFile" Header="Save to File..."/>
+                </ContextMenu>
+            </TextBox.ContextMenu>
+        </TextBox>
 
         <!-- Status Bar -->
         <StatusBar Grid.Row="5" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
@@ -248,6 +260,11 @@ $searchBorder = $Window.FindName("searchBorder")
 $txtSearch = $Window.FindName("txtSearch")
 $btnCloseSearch = $Window.FindName("btnCloseSearch")
 $lblSearchStatus = $Window.FindName("lblSearchStatus")
+$ctxCopy = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Copy" } | Select-Object -First 1
+$ctxSelectAll = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Select All" } | Select-Object -First 1
+$ctxSearch = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Search" } | Select-Object -First 1
+$ctxClear = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Clear" } | Select-Object -First 1
+$ctxSaveToFile = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Save to File..." } | Select-Object -First 1
 
 # ============================================================
 # Async Infrastructure
@@ -711,6 +728,60 @@ $txtSearch.Add_KeyDown({
 $btnCloseSearch.Add_Click({
     $searchBorder.Visibility = [System.Windows.Visibility]::Collapsed
     $txtSearch.Text = ""
+})
+
+# ============================================================
+# Context Menu Handlers
+# ============================================================
+
+$ctxCopy.Add_Click({
+    if ($terminalOutputBox.Text) {
+        Set-Clipboard -Value $terminalOutputBox.Text
+        Update-StatusBar "Output copied to clipboard"
+    } else {
+        Update-StatusBar "Nothing to copy"
+    }
+})
+
+$ctxSelectAll.Add_Click({
+    $terminalOutputBox.SelectAll()
+})
+
+$ctxSearch.Add_Click({
+    if ($searchBorder.Visibility -eq [System.Windows.Visibility]::Collapsed) {
+        $searchBorder.Visibility = [System.Windows.Visibility]::Visible
+        $txtSearch.Focus()
+    } else {
+        $searchBorder.Visibility = [System.Windows.Visibility]::Collapsed
+        $txtSearch.Text = ""
+    }
+})
+
+$ctxClear.Add_Click({
+    $terminalOutputBox.Text = ""
+    Update-StatusBar "Output cleared"
+    Update-WindowTitle
+    Set-HostnameColor ([System.Windows.Media.Brushes]::White)
+})
+
+$ctxSaveToFile.Add_Click({
+    if (-not $terminalOutputBox.Text) {
+        Update-StatusBar "Nothing to save"
+        return
+    }
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+    $dlg.FileName = "MultiTool-Output-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+    if ($dlg.ShowDialog()) {
+        try {
+            $terminalOutputBox.Text | Out-File -FilePath $dlg.FileName -Encoding UTF8
+            Update-StatusBar "Output saved to $($dlg.FileName)"
+            [Logger]::Info("Output saved to $($dlg.FileName)")
+        } catch {
+            Update-StatusBar "Save failed: $($_.Exception.Message)"
+            [Logger]::Error("Save to file failed: $($_.Exception.Message)")
+        }
+    }
 })
 
 # ============================================================
