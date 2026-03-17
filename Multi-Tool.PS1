@@ -114,7 +114,9 @@ $XAML = @"
         <!-- Input Row -->
         <StackPanel Orientation="Horizontal" Grid.Row="0" HorizontalAlignment="Center" Margin="0,10,0,8">
             <ComboBox Name="txtHostname" Width="320" Height="32" IsEditable="True" Text="Enter Hostname/IP" Background="White" FontSize="13" VerticalContentAlignment="Center" Foreground="Gray"/>
-            <Button Name="btnResolve" Content="Resolve" Width="100" Height="32" Margin="8,0,0,0" Style="{StaticResource ToolBtn}" ToolTip="Resolve hostname to IP or IP to hostname"/>
+            <Button Name="btnResolve" Content="Resolve" Width="100" Height="32" Margin="8,0,0,0" Style="{StaticResource ToolBtn}">
+                <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="DNS Resolve"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Resolves a hostname to its IP address, or performs a reverse PTR lookup of an IP to a hostname."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Resolve-DnsName"/></StackPanel></ToolTip></Button.ToolTip>
+            </Button>
         </StackPanel>
 
         <!-- Grouped Buttons (2x2 Grid) -->
@@ -131,35 +133,69 @@ $XAML = @"
             <!-- Diagnostics -->
             <Expander Header="Diagnostics" Grid.Column="0" Grid.Row="0" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
-                    <Button Name="btnPing" Content="Ping" Style="{StaticResource ToolBtn}" ToolTip="Test connectivity: DNS, ping, and WinRM reachability"/>
-                    <Button Name="btnGetSystemInfo" Content="Get System Info" Style="{StaticResource ToolBtn}" ToolTip="OS, CPU, RAM, disk, and network adapter info"/>
-                    <Button Name="btnGetUpTime" Content="Get Up Time" Style="{StaticResource ToolBtn}" ToolTip="How long the remote machine has been running since last boot"/>
-                    <Button Name="btnFirewallStatus" Content="Firewall Status" Style="{StaticResource ToolBtn}" ToolTip="Check Windows Firewall state for Domain, Private, and Public profiles"/>
-                    <Button Name="btnHealthScan" Content="Health Scan" Style="{StaticResource ToolBtn}" ToolTip="Full diagnostic: connectivity, uptime, disk, RAM, user, firewall, battery"/>
-                    <Button Name="btnDiskCheck" Content="Disk Space Check" Style="{StaticResource ToolBtn}" ToolTip="Check all drives - warns if below 20% free"/>
-                    <Button Name="btnResetWiFi" Content="Reset Wi-Fi Adapter" Style="{StaticResource ToolBtn}" ToolTip="Disable and re-enable the Wi-Fi adapter to fix connectivity issues"/>
+                    <Button Name="btnPing" Content="Ping" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Ping / Connectivity Test"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Tests DNS resolution, ICMP ping, and WinRM connectivity to the target machine."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Test-Connection, Test-WSMan"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnGetSystemInfo" Content="Get System Info" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Get System Info"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Retrieves OS, CPU, RAM, disk usage, and network adapter details from the remote machine."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Get-CimInstance Win32_*"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnGetUpTime" Content="Get Up Time" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Get Uptime"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Shows how long the remote machine has been running since its last boot."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Get-CimInstance Win32_OperatingSystem"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnFirewallStatus" Content="Firewall Status" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Firewall Status"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Checks Windows Firewall state for Domain, Private, and Public profiles on the remote machine."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Get-NetFirewallProfile"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnHealthScan" Content="Health Scan" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Full Health Scan"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Runs a full diagnostic: connectivity, uptime, disk space, RAM, logged-in user, firewall state, and battery status."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Multiple diagnostic checks"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnDiskCheck" Content="Disk Space Check" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Disk Space Check"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Checks all fixed drives and warns if any drive is below 20% free space."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Get-CimInstance Win32_LogicalDisk"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnResetWiFi" Content="Reset Wi-Fi Adapter" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Reset Wi-Fi Adapter"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Disables and re-enables the Wi-Fi adapter on the remote machine to fix connectivity issues."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Disable/Enable-PnpDevice"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
                 </WrapPanel>
             </Expander>
 
             <!-- Remote Tools -->
             <Expander Header="Remote Tools" Grid.Column="1" Grid.Row="0" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
-                    <Button Name="btnOpenPSSession" Content="Open PS Session" Style="{StaticResource ToolBtn}" ToolTip="Open an interactive PowerShell remoting session in a new window"/>
-                    <Button Name="btnMSRA" Content="Launch MSRA" Style="{StaticResource ToolBtn}" ToolTip="Offer Remote Assistance to the target machine (requires Remote Assistance feature)"/>
-                    <Button Name="btnRDC" Content="Launch RDC" Style="{StaticResource ToolBtn}" ToolTip="Connect via Remote Desktop Connection (mstsc)"/>
-                    <Button Name="btnEventLog" Content="Open Event Log" Style="{StaticResource ToolBtn}" ToolTip="Open Event Viewer connected to the remote machine"/>
+                    <Button Name="btnOpenPSSession" Content="Open PS Session" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Open PS Session"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Opens an interactive PowerShell remoting session to the target machine in a new window."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Enter-PSSession"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnMSRA" Content="Launch MSRA" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Remote Assistance (MSRA)"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Offers Remote Assistance to the target machine. Requires the Remote Assistance feature to be enabled."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: msra.exe /offerRA"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnRDC" Content="Launch RDC" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Remote Desktop (RDC)"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Connects to the target machine via Remote Desktop Connection."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: mstsc.exe /v:"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnEventLog" Content="Open Event Log" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Open Event Viewer"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Opens Event Viewer connected to the remote machine to browse system, application, and security logs."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: eventvwr.msc /computer:"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
                 </WrapPanel>
             </Expander>
 
             <!-- Management -->
             <Expander Header="Management" Grid.Column="0" Grid.Row="1" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
-                    <Button Name="btnGpUpdate" Content="Run GPUpdate" Style="{StaticResource ToolBtn}" ToolTip="Force Group Policy refresh on remote machine (gpupdate /force)"/>
-                    <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Style="{StaticResource ToolBtn}" ToolTip="List all installed software from registry (requires credentials)"/>
-                    <Button Name="btnLogOff" Content="Remote Log Off" Style="{StaticResource ToolBtn}" ToolTip="View active sessions and log off a user remotely"/>
-                    <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Style="{StaticResource ToolBtn}" ToolTip="Stop Print Spooler, clear all stuck jobs, restart Spooler"/>
-                    <Button Name="btnClearDNS" Content="Clear DNS Cache" Style="{StaticResource ToolBtn}" ToolTip="Flush DNS resolver cache on remote machine (ipconfig /flushdns)"/>
-                    <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}" ToolTip="Restart the remote machine  -  confirmation required"/>
+                    <Button Name="btnGpUpdate" Content="Run GPUpdate" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Run GPUpdate"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Forces a Group Policy refresh on the remote machine. May briefly affect the user's session."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: gpupdate /force"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Get Installed Software"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Lists all installed software by reading the Uninstall registry keys. Requires credentials."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Registry query (HKLM\...\Uninstall)"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnLogOff" Content="Remote Log Off" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Remote Log Off"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Lists active sessions on the remote machine and lets you log off a selected session by ID."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: quser, logoff"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnClearPrintQueue" Content="Clear Print Queue" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Clear Print Queue"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Stops the Print Spooler, clears all stuck print jobs, then restarts the Spooler service."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Stop/Start-Service Spooler, Remove-PrintJob"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnClearDNS" Content="Clear DNS Cache" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Clear DNS Cache"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Flushes the DNS resolver cache on the remote machine to force fresh lookups."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: ipconfig /flushdns"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
+                    <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Remote Restart"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Restarts the remote machine. Confirmation required. Unsaved work on the target will be lost."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Restart-Computer"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
                 </WrapPanel>
             </Expander>
 
@@ -167,7 +203,9 @@ $XAML = @"
             <Expander Header="Utilities" Grid.Column="1" Grid.Row="1" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
                     <Button Name="btnIncident" Content="Open IncidentIQ" Style="{StaticResource ToolBtn}" ToolTip="Open the IncidentIQ ticketing portal in your browser"/>
-                    <Button Name="btnFixMDT" Content="Fix MDT Error" Style="{StaticResource ToolBtn}" ToolTip="Remove MDT/WDT deployment artifacts from remote machine (requires credentials)"/>
+                    <Button Name="btnFixMDT" Content="Fix MDT Error" Style="{StaticResource ToolBtn}">
+                        <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Fix MDT Error"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Removes MDT/WDT deployment artifacts from the remote machine: registry keys, scheduled tasks, directories, and startup shortcuts. Requires credentials."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: MDT/WDT artifact cleanup via Invoke-Command"/></StackPanel></ToolTip></Button.ToolTip>
+                    </Button>
                     <Button Name="btnClearOutput" Content="Clear Output" Style="{StaticResource ToolBtn}" ToolTip="Clear the output box and reset status (Ctrl+L)"/>
                     <Button Name="btnCopyOutput" Content="Copy to Clipboard" Style="{StaticResource ToolBtn}" ToolTip="Copy output box contents to clipboard (Ctrl+Shift+C)"/>
                 </WrapPanel>
