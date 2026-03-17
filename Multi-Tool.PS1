@@ -388,7 +388,7 @@ function Load-HostHistory {
     return @()
 }
 
-function Save-HostHistory {
+function global:Save-HostHistory {
     param([string]$hostname)
     $historyPath = "$env:APPDATA\MultiTool\hostHistory.txt"
     $dir = Split-Path $historyPath
@@ -412,20 +412,20 @@ function Validate-Hostname {
 # UI Helper Functions
 # ============================================================
 
-function Set-ButtonsEnabled {
+function global:Set-ButtonsEnabled {
     param([bool]$Enabled)
     foreach ($btn in $script:AllActionButtons) {
         if ($btn) { $btn.IsEnabled = $Enabled }
     }
 }
 
-function Update-StatusBar {
+function global:Update-StatusBar {
     param([string]$Message)
     $timestamp = Get-Date -Format 'HH:mm:ss'
     $lblStatus.Content = "[$timestamp] $Message"
 }
 
-function Append-Output {
+function global:Append-Output {
     param([string]$Text, [string]$Header = $null)
 
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -444,7 +444,7 @@ function Append-Output {
     $terminalOutputBox.ScrollToEnd()
 }
 
-function Show-Progress {
+function global:Show-Progress {
     param([bool]$Show)
     if ($Show) {
         $progressBar.Visibility = [System.Windows.Visibility]::Visible
@@ -453,7 +453,7 @@ function Show-Progress {
     }
 }
 
-function Update-WindowTitle {
+function global:Update-WindowTitle {
     param([string]$Hostname = $null)
     if ($Hostname -and $Hostname -ne "Enter Hostname/IP") {
         $Window.Title = "Multi-Tool - $Hostname"
@@ -462,7 +462,7 @@ function Update-WindowTitle {
     }
 }
 
-function Set-HostnameColor {
+function global:Set-HostnameColor {
     param($brush)
     $txtHostname.Background = $brush
     if ($script:HostnameInnerBox) { $script:HostnameInnerBox.Background = $brush }
@@ -472,7 +472,7 @@ function Set-HostnameColor {
 # Core Async Wrapper
 # ============================================================
 
-function Invoke-Async {
+function global:Invoke-Async {
     param(
         [scriptblock]$ScriptBlock,
         [object[]]$Arguments = @(),
