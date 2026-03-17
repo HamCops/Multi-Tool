@@ -104,10 +104,9 @@ $XAML = @"
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="2*" MinHeight="80"/>
+            <RowDefinition Height="5"/>
+            <RowDefinition Height="5*" MinHeight="100"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -119,8 +118,11 @@ $XAML = @"
             </Button>
         </StackPanel>
 
+        <!-- Buttons + Progress + Search all in Row 1 -->
+        <StackPanel Grid.Row="1">
+
         <!-- Grouped Buttons (2x2 Grid) -->
-        <Grid Grid.Row="1" Margin="4,0,4,4">
+        <Grid Margin="4,0,4,4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
@@ -213,12 +215,12 @@ $XAML = @"
         </Grid>
 
         <!-- Progress Bar (indeterminate) -->
-        <ProgressBar Name="progressBar" Grid.Row="2" Margin="10,0,10,6" Height="5"
+        <ProgressBar Name="progressBar" Margin="10,0,10,6" Height="5"
                      Visibility="Hidden" IsIndeterminate="True"
                      Foreground="#4A90D9" Background="#1E3A5F"/>
 
         <!-- Search Bar (collapsed by default, Ctrl+F) -->
-        <Border Name="searchBorder" Grid.Row="3" Margin="10,0,10,6"
+        <Border Name="searchBorder" Margin="10,0,10,6"
                 Background="#1E3A5F" BorderBrush="#4A90D9" BorderThickness="1" CornerRadius="4"
                 Visibility="Collapsed" Height="32">
             <Grid>
@@ -238,8 +240,14 @@ $XAML = @"
             </Grid>
         </Border>
 
+        </StackPanel>
+
+        <!-- GridSplitter: drag to resize button area vs output area -->
+        <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
+                      Background="#2A5A8F" Cursor="SizeNS" ResizeBehavior="PreviousAndNext"/>
+
         <!-- Output Box (expands with window) -->
-        <TextBox Name="terminalOutputBox" Grid.Row="4" Margin="10,0,10,6" IsReadOnly="True"
+        <TextBox Name="terminalOutputBox" Grid.Row="3" Margin="10,0,10,6" IsReadOnly="True"
                  VerticalScrollBarVisibility="Auto" Background="#0D0D0D" Foreground="#D4D4D4"
                  AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
                  BorderBrush="#2A5A8F" BorderThickness="1" Padding="6">
@@ -257,7 +265,7 @@ $XAML = @"
         </TextBox>
 
         <!-- Status Bar -->
-        <StatusBar Grid.Row="5" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
+        <StatusBar Grid.Row="4" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
             <StatusBarItem>
                 <Label Name="lblStatus" Content="Ready  -  enter a hostname or IP above  |  Ctrl+F: Search  |  Enter: Ping" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
             </StatusBarItem>
