@@ -477,7 +477,8 @@ function global:Invoke-Async {
         [scriptblock]$ScriptBlock,
         [object[]]$Arguments = @(),
         [scriptblock]$OnComplete,
-        [string]$Label = "Operation"
+        [string]$Label = "Operation",
+        [hashtable]$Context = @{}
     )
 
     Set-ButtonsEnabled -Enabled $false
@@ -499,6 +500,7 @@ function global:Invoke-Async {
         OnComplete  = $OnComplete
         Label       = $Label
         StartTime   = Get-Date
+        Context     = $Context
     })
 
     # Start timer if not already running
@@ -532,8 +534,9 @@ $script:AsyncTimer.Add_Tick({
                     }.GetNewClosure())
                 } elseif ($item.OnComplete) {
                     $completionBlock = $item.OnComplete
+                    $ctx = $item.Context
                     $Window.Dispatcher.Invoke([action]{
-                        & $completionBlock $result
+                        & $completionBlock $result $ctx
                         Update-StatusBar "$($item.Label) completed in ${duration}s"
                     }.GetNewClosure())
                 }
@@ -726,7 +729,7 @@ $btnPing.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $computer = $hostnameOrIp
 
-    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
 
         $result = @{ IsReachable = $false; CanResolve = $false; CanPing = $false; CanWinRM = $false; User = $null }
@@ -748,7 +751,7 @@ $btnPing.Add_Click({
 
         return $result
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
 
         if ($r.IsReachable) {
@@ -759,17 +762,17 @@ $btnPing.Add_Click({
             if ($r.CanResolve) { $statusParts += "DNS: OK" }
             if ($r.User) { $statusParts += "User: $($r.User)" }
 
-            Save-HostHistory -hostname $computer
-            if (-not $txtHostname.Items.Contains($computer)) {
-                $txtHostname.Items.Insert(0, $computer)
+            Save-HostHistory -hostname $ctx.Computer
+            if (-not $txtHostname.Items.Contains($ctx.Computer)) {
+                $txtHostname.Items.Insert(0, $ctx.Computer)
             }
 
-            Append-Output ($statusParts -join "`r`n") -Header "Connection Successful - $computer"
-            [Logger]::Info("Successful connection test to $computer")
+            Append-Output ($statusParts -join "`r`n") -Header "Connection Successful - $($ctx.Computer)"
+            [Logger]::Info("Successful connection test to $($ctx.Computer)")
         } else {
             Set-HostnameColor ([System.Windows.Media.Brushes]::Orange)
-            Append-Output "Host may be unreachable or WinRM disabled." -Header "Connection Failed - $computer"
-            [Logger]::Warn("Connection test failed for $computer")
+            Append-Output "Host may be unreachable or WinRM disabled." -Header "Connection Failed - $($ctx.Computer)"
+            [Logger]::Warn("Connection test failed for $($ctx.Computer)")
         }
     }
 })
@@ -785,7 +788,7 @@ $btnGetSystemInfo.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "System Info on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "System Info on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
 
         $cimSession = New-CimSession -ComputerName $comp -ErrorAction Stop
@@ -838,13 +841,13 @@ $btnGetSystemInfo.Add_Click({
             Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
         }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "System Information - $computer"
-            [Logger]::Info("Retrieved system information for $computer")
+            Append-Output $r.Data -Header "System Information - $($ctx.Computer)"
+            [Logger]::Info("Retrieved system information for $($ctx.Computer)")
         } else {
-            Append-Output "ERROR: $($r.Error)" -Header "System Info Failed - $computer"
+            Append-Output "ERROR: $($r.Error)" -Header "System Info Failed - $($ctx.Computer)"
         }
     }
 })
@@ -861,7 +864,7 @@ $btnResolve.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $input = $hostnameOrIp
 
-    Invoke-Async -Label "Resolve $input" -Arguments @($input) -ScriptBlock {
+    Invoke-Async -Label "Resolve $input" -Arguments @($input) -Context @{ Computer = $input } -ScriptBlock {
         param($target)
 
         $isIP = $target -match '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
@@ -879,11 +882,11 @@ $btnResolve.Add_Click({
             }
         }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "DNS Resolution - $input"
-            [Logger]::Info("Resolved $input")
+            Append-Output $r.Data -Header "DNS Resolution - $($ctx.Computer)"
+            [Logger]::Info("Resolved $($ctx.Computer)")
         }
     }
 })
@@ -932,15 +935,15 @@ $btnGpUpdate.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $computer = $hostnameOrIp
 
-    Invoke-Async -Label "GPUpdate on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "GPUpdate on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $output = Invoke-Command -ComputerName $comp -ScriptBlock { gpupdate /force 2>&1 | Out-String } -ErrorAction Stop
         return @{ Success = $true; Data = $output }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "GPUpdate - $computer"
+            Append-Output $r.Data -Header "GPUpdate - $($ctx.Computer)"
         }
     }
 })
@@ -1029,7 +1032,7 @@ $btnGetInstalledSoftware.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Installed Software on $computer" -Arguments @($computer, $credential) -ScriptBlock {
+    Invoke-Async -Label "Installed Software on $computer" -Arguments @($computer, $credential) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
         $software = Invoke-Command -ComputerName $comp -Credential $cred -ErrorAction Stop -ScriptBlock {
             Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*,
@@ -1048,13 +1051,13 @@ $btnGetInstalledSoftware.Add_Click({
         }
         return @{ Success = $true; Data = "No installed software found."; Count = 0 }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            $header = "Installed Software - $computer"
+            $header = "Installed Software - $($ctx.Computer)"
             if ($r.Count) { $header += " ($($r.Count) items)" }
             Append-Output $r.Data -Header $header
-            [Logger]::Info("Retrieved installed software for $computer")
+            [Logger]::Info("Retrieved installed software for $($ctx.Computer)")
         }
     }
 })
@@ -1071,7 +1074,7 @@ $btnGetUpTime.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Uptime on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Uptime on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $cimSession = New-CimSession -ComputerName $comp -ErrorAction Stop
         try {
@@ -1089,11 +1092,11 @@ $btnGetUpTime.Add_Click({
             Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
         }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Uptime - $computer"
-            [Logger]::Info("Retrieved uptime for $computer")
+            Append-Output $r.Data -Header "Uptime - $($ctx.Computer)"
+            [Logger]::Info("Retrieved uptime for $($ctx.Computer)")
         }
     }
 })
@@ -1109,7 +1112,7 @@ $btnDiskCheck.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Disk Check on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Disk Check on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
@@ -1134,10 +1137,10 @@ $btnDiskCheck.Add_Click({
         }
         return @{ Success = $true; Data = $data }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Disk Space - $computer"
+            Append-Output $r.Data -Header "Disk Space - $($ctx.Computer)"
         }
     }
 })
@@ -1164,7 +1167,7 @@ $btnResetWiFi.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Reset Wi-Fi on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Reset Wi-Fi on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             $WiFiDevice = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue |
@@ -1203,10 +1206,10 @@ $btnResetWiFi.Add_Click({
         }
         return @{ Success = $true; Data = $data }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Wi-Fi Reset - $computer"
+            Append-Output $r.Data -Header "Wi-Fi Reset - $($ctx.Computer)"
         }
     }
 })
@@ -1222,7 +1225,7 @@ $btnHealthScan.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
 
         # Connectivity checks
@@ -1309,11 +1312,11 @@ $btnHealthScan.Add_Click({
 
         return @{ Success = $true; Data = ($output -join "`r`n"); IssueCount = $issues.Count }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Health Scan - $computer"
-            [Logger]::Info("Health scan complete on $computer - $($r.IssueCount) issue(s)")
+            Append-Output $r.Data -Header "Health Scan - $($ctx.Computer)"
+            [Logger]::Info("Health scan complete on $($ctx.Computer) - $($r.IssueCount) issue(s)")
         }
     }
 })
@@ -1337,7 +1340,7 @@ $btnFixMDT.Add_Click({
         Update-WindowTitle -Hostname $remoteMachine
         $computer = $remoteMachine
 
-        Invoke-Async -Label "MDT Cleanup on $computer" -Arguments @($computer, $credential) -ScriptBlock {
+        Invoke-Async -Label "MDT Cleanup on $computer" -Arguments @($computer, $credential) -Context @{ Computer = $computer } -ScriptBlock {
             param($comp, $cred)
 
             $cleanupResult = Invoke-Command -ComputerName $comp -Credential $cred -ErrorAction Stop -ScriptBlock {
@@ -1626,7 +1629,7 @@ $btnFixMDT.Add_Click({
                 Data = $cleanupResult
             }
         } -OnComplete {
-            param($result)
+            param($result, $ctx)
             $r = $result | Select-Object -First 1
 
             if ($r.Success -and $r.Data) {
@@ -1649,8 +1652,8 @@ $btnFixMDT.Add_Click({
                     $summary += "`r`nWARNING: Issues were found but could not be fixed. Check administrator credentials."
                 }
 
-                Append-Output ($summary -join "`r`n") -Header "MDT Cleanup - $computer"
-                [Logger]::Info("MDT cleanup completed on $computer - $($d.IssuesFixed)/$($d.IssuesFound) fixed")
+                Append-Output ($summary -join "`r`n") -Header "MDT Cleanup - $($ctx.Computer)"
+                [Logger]::Info("MDT cleanup completed on $($ctx.Computer) - $($d.IssuesFixed)/$($d.IssuesFound) fixed")
             }
         }
     } catch {
@@ -1683,7 +1686,7 @@ $btnClearPrintQueue.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Clear Print Queue on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Clear Print Queue on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             $output = @()
@@ -1734,10 +1737,10 @@ $btnClearPrintQueue.Add_Click({
         }
         return @{ Success = $true; Data = $data }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Print Queue - $computer"
+            Append-Output $r.Data -Header "Print Queue - $($ctx.Computer)"
         }
     }
 })
@@ -1754,7 +1757,7 @@ $btnClearDNS.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Clear DNS on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Clear DNS on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             $flushOutput = ipconfig /flushdns 2>&1 | Out-String
@@ -1778,10 +1781,10 @@ $btnClearDNS.Add_Click({
         }
         return @{ Success = $true; Data = $data }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "DNS Cache Clear - $computer"
+            Append-Output $r.Data -Header "DNS Cache Clear - $($ctx.Computer)"
         }
     }
 })
@@ -1808,16 +1811,16 @@ $btnRestart.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Restart $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Restart $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         Restart-Computer -ComputerName $comp -Force -ErrorAction Stop
         return @{ Success = $true; Data = "Restart command sent successfully to $comp.`r`nThe remote computer should restart within a few seconds." }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Remote Restart - $computer"
-            [Logger]::Info("Restart command sent to $computer")
+            Append-Output $r.Data -Header "Remote Restart - $($ctx.Computer)"
+            [Logger]::Info("Restart command sent to $($ctx.Computer)")
         }
     }
 })
@@ -1834,7 +1837,7 @@ $btnFirewallStatus.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Firewall Status on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Firewall Status on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction
@@ -1866,10 +1869,10 @@ $btnFirewallStatus.Add_Click({
         }
         return @{ Success = $true; Data = $data }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
         if ($r.Success) {
-            Append-Output $r.Data -Header "Firewall Status - $computer"
+            Append-Output $r.Data -Header "Firewall Status - $($ctx.Computer)"
         }
     }
 })
@@ -1886,29 +1889,30 @@ $btnLogOff.Add_Click({
     $computer = $remoteMachine
 
     # Step 1: Query sessions asynchronously
-    Invoke-Async -Label "Query Sessions on $computer" -Arguments @($computer) -ScriptBlock {
+    Invoke-Async -Label "Query Sessions on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp)
         $sessions = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
             quser 2>$null | Out-String
         }
         if (-not $sessions -or $sessions.Trim() -eq "") {
-            return @{ Success = $true; Data = $null; Message = "No active user sessions found." }
+            return @{ Success = $true; Data = $null }
         }
         return @{ Success = $true; Data = $sessions.Trim() }
     } -OnComplete {
-        param($result)
+        param($result, $ctx)
         $r = $result | Select-Object -First 1
+        $comp = $ctx.Computer
 
         if (-not $r.Data) {
-            Append-Output "No active user sessions found." -Header "Sessions - $computer"
+            Append-Output "No active user sessions found." -Header "Sessions - $comp"
             return
         }
 
-        Append-Output $r.Data -Header "Active Sessions - $computer"
+        Append-Output $r.Data -Header "Active Sessions - $comp"
 
         $sessionInput = [Microsoft.VisualBasic.Interaction]::InputBox(
             "Enter the session ID to log off (see output above):",
-            "Remote Log Off - $computer",
+            "Remote Log Off - $comp",
             ""
         )
         if (-not $sessionInput -or $sessionInput -notmatch '^\d+$') {
@@ -1918,19 +1922,19 @@ $btnLogOff.Add_Click({
 
         $sid = $sessionInput
         # Step 2: Perform log off asynchronously
-        Invoke-Async -Label "Log Off Session $sid on $computer" -Arguments @($computer, $sid) -ScriptBlock {
-            param($comp, $sessionId)
-            Invoke-Command -ComputerName $comp -ScriptBlock {
+        Invoke-Async -Label "Log Off Session $sid on $comp" -Arguments @($comp, $sid) -Context @{ Computer = $comp } -ScriptBlock {
+            param($computer, $sessionId)
+            Invoke-Command -ComputerName $computer -ScriptBlock {
                 param($s)
                 logoff $s 2>&1 | Out-Null
             } -ArgumentList $sessionId -ErrorAction Stop
             return @{ Success = $true; Data = "Session $sessionId logged off successfully." }
         } -OnComplete {
-            param($result2)
+            param($result2, $ctx2)
             $r2 = $result2 | Select-Object -First 1
             if ($r2.Success) {
-                Append-Output $r2.Data -Header "Log Off - $computer"
-                [Logger]::Info("Logged off session $sid on $computer")
+                Append-Output $r2.Data -Header "Log Off - $($ctx2.Computer)"
+                [Logger]::Info("Logged off session on $($ctx2.Computer)")
             }
         }
     }
