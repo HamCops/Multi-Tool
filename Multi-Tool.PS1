@@ -221,6 +221,9 @@ $XAML = @"
             <StatusBarItem>
                 <Label Name="lblStatus" Content="Ready  -  enter a hostname or IP above  |  Ctrl+F: Search  |  Enter: Ping" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
             </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <Label Name="lblOpCount" Content="Ops: 0" Foreground="#8BB8D8" Padding="4,0" FontSize="12"/>
+            </StatusBarItem>
         </StatusBar>
     </Grid>
 </Window>
@@ -260,6 +263,7 @@ $searchBorder = $Window.FindName("searchBorder")
 $txtSearch = $Window.FindName("txtSearch")
 $btnCloseSearch = $Window.FindName("btnCloseSearch")
 $lblSearchStatus = $Window.FindName("lblSearchStatus")
+$lblOpCount = $Window.FindName("lblOpCount")
 $ctxCopy = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Copy" } | Select-Object -First 1
 $ctxSelectAll = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Select All" } | Select-Object -First 1
 $ctxSearch = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [System.Windows.Controls.MenuItem] -and $_.Header -eq "Search" } | Select-Object -First 1
@@ -269,6 +273,9 @@ $ctxSaveToFile = $terminalOutputBox.ContextMenu.Items | Where-Object { $_ -is [S
 # ============================================================
 # Async Infrastructure
 # ============================================================
+
+# Operation counter
+$script:OperationCount = 0
 
 # RunspacePool for background operations
 $script:RunspacePool = [runspacefactory]::CreateRunspacePool(1, 5)
@@ -555,6 +562,8 @@ $script:AsyncTimer.Add_Tick({
                     $Window.Dispatcher.Invoke([action]{
                         & $completionBlock $result $ctx
                         Update-StatusBar "$($item.Label) completed in ${duration}s"
+                        $script:OperationCount++
+                        $lblOpCount.Content = "Ops: $script:OperationCount"
                     }.GetNewClosure())
                 }
             }
