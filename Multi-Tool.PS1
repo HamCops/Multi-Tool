@@ -129,6 +129,7 @@ $XAML = @"
                     <Button Name="btnFirewallStatus" Content="Firewall Status" Style="{StaticResource ToolBtn}" ToolTip="Check Windows Firewall state for Domain, Private, and Public profiles"/>
                     <Button Name="btnHealthScan" Content="Health Scan" Style="{StaticResource ToolBtn}" ToolTip="Full diagnostic: connectivity, uptime, disk, RAM, user, firewall, battery"/>
                     <Button Name="btnDiskCheck" Content="Disk Space Check" Style="{StaticResource ToolBtn}" ToolTip="Check all drives - warns if below 20% free"/>
+                    <Button Name="btnResetWiFi" Content="Reset Wi-Fi Adapter" Style="{StaticResource ToolBtn}" ToolTip="Disable and re-enable the Intel AX211 Wi-Fi adapter to fix connectivity issues"/>
                 </WrapPanel>
             </GroupBox>
 
@@ -214,6 +215,7 @@ $btnClearOutput = $Window.FindName("btnClearOutput")
 $btnCopyOutput = $Window.FindName("btnCopyOutput")
 $btnHealthScan = $Window.FindName("btnHealthScan")
 $btnDiskCheck = $Window.FindName("btnDiskCheck")
+$btnResetWiFi = $Window.FindName("btnResetWiFi")
 $progressBar = $Window.FindName("progressBar")
 
 # Utility Functions
@@ -781,6 +783,70 @@ $btnDiskCheck.Add_Click({
         $terminalOutputBox.Text = $result.Data
     } else {
         $terminalOutputBox.Text = "ERROR: $($result.Message)"
+    }
+})
+
+# Reset Wi-Fi Adapter Button Click Event
+$btnResetWiFi.Add_Click({
+    $remoteMachine = [InputValidator]::SanitizeInput($txtHostname.Text)
+    if (Validate-Hostname $remoteMachine) {
+        $terminalOutputBox.Text = "Please enter a valid hostname or IP address."
+        return
+    }
+
+    try {
+        [Logger]::Info("Resetting Wi-Fi adapter on $remoteMachine")
+        $terminalOutputBox.Text = "Resetting Wi-Fi adapter on ${remoteMachine}...`r`nPlease wait..."
+
+        $result = Invoke-RemoteOperation -ComputerName $remoteMachine -ScriptBlock {
+            $WiFiDevice = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue |
+                Where-Object { $_.FriendlyName -match 'Wi-Fi|WiFi|Wireless|WLAN|802\.11' -and $_.InstanceId -notmatch 'ROOT\\' }
+
+            if ($WiFiDevice) {
+                # If multiple adapters found, use the first one
+                if ($WiFiDevice -is [array]) { $WiFiDevice = $WiFiDevice[0] }
+
+                $output = @(
+                    "Wi-Fi Adapter Reset",
+                    "=" * 50,
+                    "Target: $($WiFiDevice.FriendlyName)",
+                    "Current Status: $($WiFiDevice.Status)",
+                    ""
+                )
+
+                $output += "Disabling adapter..."
+                $WiFiDevice | Disable-PnpDevice -Confirm:$false
+                Start-Sleep -Seconds 3
+
+                $output += "Enabling adapter..."
+                $WiFiDevice | Enable-PnpDevice -Confirm:$false
+                Start-Sleep -Seconds 2
+
+                $Check = Get-PnpDevice -InstanceId $WiFiDevice.InstanceId
+                $output += ""
+                if ($Check.Status -eq "OK") {
+                    $output += "SUCCESS: Wi-Fi adapter is now responding normally."
+                    $output += "Status: $($Check.Status)"
+                } else {
+                    $output += "WARNING: Device status is '$($Check.Status)'. A hard reboot may be required."
+                }
+
+                return $output -join "`r`n"
+            } else {
+                return "ERROR: Could not find a Wi-Fi adapter on this machine."
+            }
+        } -OperationName "Reset Wi-Fi Adapter"
+
+        if ($result.Success) {
+            $terminalOutputBox.Text = $result.Data
+        } else {
+            $terminalOutputBox.Text = "ERROR: $($result.Message)"
+        }
+    }
+    catch {
+        $errorMessage = "Error resetting Wi-Fi adapter on ${remoteMachine}: $($_.Exception.Message)"
+        $terminalOutputBox.Text = $errorMessage
+        [Logger]::Error($errorMessage)
     }
 })
 
