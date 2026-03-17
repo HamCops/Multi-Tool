@@ -10,16 +10,17 @@ Multi-Tool is a PowerShell WPF GUI application for Windows system administration
 
 ### Core Structure
 
-The application is entirely self-contained in `Multi-Tool.PS1` (~1650 lines) with the following sections:
+The application is entirely self-contained in `Multi-Tool.PS1` (~1635 lines) with the following sections:
 
-1. **WPF Assembly Loading** (Lines 1-3): Loads required .NET assemblies
-2. **Utility Classes** (Lines 5-40): InputValidator and Logger classes
-3. **Configuration** (Lines 42-52): Global configuration hashtable
-4. **XAML GUI** (Lines 54-105): Complete WPF interface definition
-5. **XAML Loading** (Lines 107-110): Parse and load the UI
-6. **Control References** (Lines 112-125): Store references to UI controls
-7. **Utility Functions** (Lines 127-200): Helper functions for remote operations
-8. **Event Handlers** (Lines 200+): Click handlers for each button
+1. **WPF Assembly Loading** (Lines 1-4): Loads required .NET assemblies
+2. **Utility Classes** (Lines 7-39): InputValidator and Logger classes
+3. **Configuration** (Lines 41-53): Global configuration hashtable
+4. **XAML GUI** (Lines 55-187): Complete WPF interface definition
+5. **XAML Loading** (Lines 189-190): Parse and load the UI
+6. **Control References** (Lines 192-217): Store references to UI controls
+7. **Utility Functions** (Lines 219-416): Helper functions for remote operations
+8. **Event Handlers** (Lines 418+): Click handlers for each button
+9. **Window Init** (Lines 1617-1635): History loading, template wiring, ShowDialog, cleanup
 
 ### Key Components
 
@@ -41,14 +42,22 @@ The application is entirely self-contained in `Multi-Tool.PS1` (~1650 lines) wit
 - `Get-SafeDateTime`: Handles multiple datetime formats from WMI/CIM
 - `Test-RemoteConnectivity`: Comprehensive connectivity testing (DNS, ping, WinRM)
 - `Invoke-RemoteOperation`: Standardized remote command execution with error handling
+- `Get-SystemInfoOptimized`: Batches multiple CIM queries in a single session for efficiency
+- `Update-ConnectionStatus`: Tests connectivity, updates ComboBox background color (green/orange/red), saves host to history
+- `Load-HostHistory` / `Save-HostHistory`: Persist recent hosts to `%APPDATA%\MultiTool\hostHistory.txt` (top 10)
+- `Validate-Hostname`: Inline helper used in event handlers to reject empty/placeholder/invalid input
+
+### Hostname ComboBox and Color Feedback
+
+`txtHostname` is a WPF **ComboBox** (not a plain TextBox), which enables the recent-hosts dropdown. Setting `.Background` on the ComboBox itself doesn't reach the visible text area; instead, `$script:HostnameInnerBox` holds a reference to the inner `PART_EditableTextBox` element obtained via `$txtHostname.Template.FindName(...)` in the `Window.Add_Loaded` handler. Both must be updated together when changing background color.
 
 ### Feature Areas
 
 1. **Network Operations**: DNS resolution, ping, connectivity validation
 2. **System Information**: OS details, hardware, uptime, installed software via CIM queries
-3. **Remote Management**: PowerShell sessions, GPUpdate, Event Viewer
+3. **Remote Management**: PowerShell sessions, GPUpdate, Event Viewer, log-off sessions, restart
 4. **Remote Tools**: MSRA (Remote Assistance), RDC (Remote Desktop Connection)
-5. **Windows 11 Upgrade**: Downloads and launches Windows 11 setup assistant
+5. **Disk & Health**: Disk space check (warns below 20% free), full health scan
 6. **MDT/WDT Cleanup**: Fully embedded scriptblock executed via `Invoke-Command` for deployment artifact removal
 
 ## Running and Testing
@@ -76,7 +85,15 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\Multi-Tool.PS1"
 ### Input Validation Pattern
 **ALWAYS** validate user input before remote operations:
 ```powershell
-$hostname = $txtHostname.Text
+$hostname = [InputValidator]::SanitizeInput($txtHostname.Text)
+if (Validate-Hostname $hostname) {
+    $terminalOutputBox.Text = "Please enter a valid hostname/IP."
+    return
+}
+```
+
+Or for explicit checks with logging:
+```powershell
 if (-not [InputValidator]::IsValidHostnameOrIP($hostname)) {
     $terminalOutputBox.Text = "ERROR: Invalid hostname or IP address"
     [Logger]::Error("Invalid input: $hostname")
@@ -112,7 +129,6 @@ $Window.Dispatcher.Invoke([action]{
 Use try-catch with logging:
 ```powershell
 try {
-    # Operation
     [Logger]::Info("Operation started")
     # ...
 } catch {
@@ -136,12 +152,12 @@ $progressBar.Visibility = [System.Windows.Visibility]::Hidden
 
 ### Adding a Button and Handler
 
-1. **Add button to XAML** (around line 90):
+1. **Add button to XAML** (inside an appropriate GroupBox WrapPanel, around lines 125-165):
 ```xml
-<Button Name="btnNewFeature" Content="New Feature" Width="180" Margin="5"/>
+<Button Name="btnNewFeature" Content="New Feature" Style="{StaticResource ToolBtn}" ToolTip="Description"/>
 ```
 
-2. **Get control reference** (around line 125):
+2. **Get control reference** (around line 215):
 ```powershell
 $btnNewFeature = $Window.FindName("btnNewFeature")
 ```
@@ -150,17 +166,16 @@ $btnNewFeature = $Window.FindName("btnNewFeature")
 ```powershell
 $btnNewFeature.Add_Click({
     try {
-        $hostname = $txtHostname.Text
-        if (-not [InputValidator]::IsValidHostnameOrIP($hostname)) {
-            $terminalOutputBox.Text = "ERROR: Invalid hostname or IP"
+        $hostname = [InputValidator]::SanitizeInput($txtHostname.Text)
+        if (Validate-Hostname $hostname) {
+            $terminalOutputBox.Text = "Please enter a valid hostname/IP."
             return
         }
-        $hostname = [InputValidator]::SanitizeInput($hostname)
-        
+
         [Logger]::Info("New feature invoked for $hostname")
-        
+
         # Your feature logic here
-        
+
         $terminalOutputBox.Text = "Feature completed"
     }
     catch {
@@ -172,13 +187,12 @@ $btnNewFeature.Add_Click({
 
 ### Extending System Information Queries
 
-Use CIM instead of legacy WMI:
+Use CIM instead of legacy WMI; always clean up sessions:
 ```powershell
 $cimSession = New-CimSession -ComputerName $hostname -ErrorAction Stop
 try {
     $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
     $cpuInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_Processor
-    # Format output
     $output = @(
         "OS: $($osInfo.Caption)"
         "CPU: $($cpuInfo.Name)"
@@ -193,7 +207,7 @@ finally {
 
 The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires no external files.
 
-**What It Does**: 
+**What It Does**:
 - Executes remote cleanup of MDT/WDT deployment artifacts via PowerShell remoting
 - Removes registry run keys, scheduled tasks, directories (C:\MININT, etc.), startup shortcuts
 - Disables auto-logon if configured by MDT
@@ -213,13 +227,13 @@ The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires
 - ✅ Logging for audit trail
 - ✅ Error handling prevents information leakage
 
-### Remaining Concerns (from InitialWrite\Up.md)
+### Remaining Concerns
 - Credential management: Currently uses prompts, should integrate Windows Credential Manager
 - Web downloads: Windows 11 installer downloads without hash verification
 - Remote execution: Limited to PowerShell remoting (requires WinRM)
 
 ### Best Practices When Modifying
-- Always use `[InputValidator]::IsValidHostnameOrIP()` before remote operations
+- Always use `[InputValidator]::IsValidHostnameOrIP()` or `Validate-Hostname` before remote operations
 - Never concatenate user input directly into commands
 - Use `-ErrorAction Stop` with try-catch for predictable error handling
 - Log security-relevant operations with `[Logger]::Info()` or `[Logger]::Warn()`
@@ -230,42 +244,30 @@ The MDT cleanup functionality is fully embedded in `Multi-Tool.PS1` and requires
 
 **Symptoms**:
 - Error: "Cannot convert System.Object[] to System.UInt32" or similar type conversion errors
-- Buttons that query AD/WMI properties fail even with proper error handling
 - The issue persists across different query methods (Get-ADComputer, Get-ADObject, ADSI searcher)
 
-**Root Cause**:
-- Active Directory properties contain array values where PowerShell cmdlets expect scalar values
-- This is a data integrity issue in the AD database, not a code issue
-- Common in environments with custom AD schema extensions or historical data corruption
+**Root Cause**: Active Directory properties contain array values where PowerShell cmdlets expect scalar values — a data integrity issue in the AD database.
 
 **Solutions**:
-1. **Avoid problematic cmdlets**: Use simpler alternatives like `quser` command instead of CIM queries, or LDAP searches with individual property queries
-2. **Clean Active Directory**: Work with domain administrators to identify and fix AD objects with array properties where single values are expected
-3. **Update PowerShell modules**: Ensure RSAT tools and ActiveDirectory module are up-to-date
-4. **Query properties individually**: Instead of requesting multiple properties at once, query them one at a time with error suppression for each
-
-**Disabled Features** (buttons remain in XAML but handlers are non-functional due to AD corruption in target environment):
-- Computer AD Info (`btnGetComputerInfo`) — Get-ADComputer queries
-- Windows Defender Status (`btnDefenderStatus`) — Get-MpComputerStatus queries
-- Show Current User (`btnShowCurrentUser`) — Get-CimInstance Win32_ComputerSystem queries
+1. Use simpler alternatives like `quser` instead of CIM queries
+2. Query properties individually with per-property error suppression
+3. Work with domain administrators to fix corrupted AD objects
 
 ## File Structure
 
 ```
-/home/cam/Projects/Multi-Tool/
+Multi-Tool/
 ├── Multi-Tool.PS1                # Main application (PowerShell + WPF) - fully self-contained
 ├── README.md                     # Project documentation
 ├── CLAUDE.md                     # This file - development guide
 └── Multi-Tool.code-workspace     # VS Code workspace
 ```
 
-**Note**: The application is entirely self-contained in `Multi-Tool.PS1` with no external script dependencies.
-
 ## Dependencies
 
 **PowerShell Modules** (built-in):
 - No external modules required
-- Uses WPF assemblies (PresentationFramework, WindowsBase, PresentationCore)
+- Uses WPF assemblies (PresentationFramework, WindowsBase, PresentationCore, Microsoft.VisualBasic)
 - Uses standard cmdlets: Invoke-Command, Get-CimInstance, Test-Connection, etc.
 
 **Windows Features Required**:
