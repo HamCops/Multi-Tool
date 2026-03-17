@@ -307,7 +307,7 @@ function Test-RemoteConnectivity {
     } catch { }
 
     try {
-        $ping = Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -TimeoutSeconds $TimeoutSeconds
+        $ping = Test-Connection -ComputerName $ComputerName -Count 1 -Quiet
         $result.CanPing = $ping
     } catch { }
 
@@ -732,7 +732,7 @@ $btnPing.Add_Click({
         $result = @{ IsReachable = $false; CanResolve = $false; CanPing = $false; CanWinRM = $false; User = $null }
 
         try { Resolve-DnsName -Name $comp -ErrorAction Stop | Out-Null; $result.CanResolve = $true } catch { }
-        try { $result.CanPing = Test-Connection -ComputerName $comp -Count 1 -Quiet -TimeoutSeconds $timeout } catch { }
+        try { $result.CanPing = Test-Connection -ComputerName $comp -Count 1 -Quiet } catch { }
         try { Test-WSMan -ComputerName $comp -ErrorAction Stop | Out-Null; $result.CanWinRM = $true } catch { }
         $result.IsReachable = $result.CanPing -or $result.CanWinRM
 
@@ -1228,7 +1228,7 @@ $btnHealthScan.Add_Click({
         # Connectivity checks
         $conn = @{ CanResolve = $false; CanPing = $false; CanWinRM = $false }
         try { Resolve-DnsName -Name $comp -ErrorAction Stop | Out-Null; $conn.CanResolve = $true } catch { }
-        try { $conn.CanPing = Test-Connection -ComputerName $comp -Count 1 -Quiet -TimeoutSeconds $timeout } catch { }
+        try { $conn.CanPing = Test-Connection -ComputerName $comp -Count 1 -Quiet } catch { }
         try { Test-WSMan -ComputerName $comp -ErrorAction Stop | Out-Null; $conn.CanWinRM = $true } catch { }
 
         # Remote data
