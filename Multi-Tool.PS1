@@ -247,11 +247,14 @@ $XAML = @"
                       Background="#2A5A8F" Cursor="SizeNS" ResizeBehavior="PreviousAndNext"/>
 
         <!-- Output Box (expands with window) -->
-        <TextBox Name="terminalOutputBox" Grid.Row="3" Margin="10,0,10,6" IsReadOnly="True"
-                 VerticalScrollBarVisibility="Auto" Background="#0D0D0D" Foreground="#D4D4D4"
-                 AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
-                 BorderBrush="#2A5A8F" BorderThickness="1" Padding="6">
-            <TextBox.ContextMenu>
+        <RichTextBox Name="terminalOutputBox" Grid.Row="3" Margin="10,0,10,6" IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto" Background="#0D0D0D" Foreground="#D4D4D4"
+                     FontFamily="Consolas" FontSize="12" IsDocumentEnabled="True"
+                     BorderBrush="#2A5A8F" BorderThickness="1" Padding="6">
+            <RichTextBox.Document>
+                <FlowDocument PageWidth="5000"/>
+            </RichTextBox.Document>
+            <RichTextBox.ContextMenu>
                 <ContextMenu Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White">
                     <MenuItem Name="ctxCopy" Header="Copy" InputGestureText="Ctrl+Shift+C"/>
                     <MenuItem Name="ctxSelectAll" Header="Select All"/>
@@ -261,8 +264,8 @@ $XAML = @"
                     <Separator/>
                     <MenuItem Name="ctxSaveToFile" Header="Save to File..."/>
                 </ContextMenu>
-            </TextBox.ContextMenu>
-        </TextBox>
+            </RichTextBox.ContextMenu>
+        </RichTextBox>
 
         <!-- Status Bar -->
         <StatusBar Grid.Row="4" Background="#011A40" BorderBrush="#2A5A8F" BorderThickness="0,1,0,0" Height="26">
@@ -497,23 +500,73 @@ function global:Update-StatusBar {
     $lblStatus.Content = "[$timestamp] $Message"
 }
 
+function global:Get-OutputText {
+    $range = New-Object System.Windows.Documents.TextRange(
+        $terminalOutputBox.Document.ContentStart,
+        $terminalOutputBox.Document.ContentEnd)
+    return $range.Text
+}
+
 function global:Append-Output {
     param([string]$Text, [string]$Header = $null)
 
+    $doc = $terminalOutputBox.Document
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $separator = "=" * 60
 
-    $newContent = ""
-    if ($terminalOutputBox.Text) { $newContent = "`r`n`r`n" }
+    $conv = [System.Windows.Media.BrushConverter]::new()
+    $headerBrush    = $conv.ConvertFromString("#4A90D9")
+    $timestampBrush = $conv.ConvertFromString("#8BB8D8")
+    $separatorBrush = $conv.ConvertFromString("#3A5A7F")
+    $errorBrush     = $conv.ConvertFromString("#E06C75")
+    $successBrush   = $conv.ConvertFromString("#98C379")
+    $warningBrush   = $conv.ConvertFromString("#E5C07B")
+    $sectionBrush   = $conv.ConvertFromString("#4A90D9")
+    $normalBrush    = $conv.ConvertFromString("#D4D4D4")
 
     if ($Header) {
-        $newContent += "[$timestamp] $Header`r`n$separator`r`n$Text"
-    } else {
-        $newContent += "[$timestamp]`r`n$Text"
+        $headerPara = New-Object System.Windows.Documents.Paragraph
+        $headerPara.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $tsRun = New-Object System.Windows.Documents.Run("[$timestamp] ")
+        $tsRun.Foreground = $timestampBrush
+        $hRun = New-Object System.Windows.Documents.Run($Header)
+        $hRun.Foreground = $headerBrush
+        $hRun.FontWeight = [System.Windows.FontWeights]::Bold
+        $headerPara.Inlines.Add($tsRun)
+        $headerPara.Inlines.Add($hRun)
+        $doc.Blocks.Add($headerPara)
+
+        $sepPara = New-Object System.Windows.Documents.Paragraph
+        $sepPara.Margin = [System.Windows.Thickness]::new(0)
+        $sepRun = New-Object System.Windows.Documents.Run($separator)
+        $sepRun.Foreground = $separatorBrush
+        $sepPara.Inlines.Add($sepRun)
+        $doc.Blocks.Add($sepPara)
     }
 
-    $terminalOutputBox.AppendText($newContent)
+    foreach ($line in ($Text -split "`r?`n")) {
+        $para = New-Object System.Windows.Documents.Paragraph
+        $para.Margin = [System.Windows.Thickness]::new(0)
+        $run = New-Object System.Windows.Documents.Run($line)
+
+        if     ($line -match '(?i)^(ERROR|FAIL|OFFLINE|NOT REACHABLE|CRITICAL|\!\!)') { $run.Foreground = $errorBrush }
+        elseif ($line -match '(?i)^(SUCCESS|PASS|ONLINE|REACHABLE|COMPLETED|FIXED)')  { $run.Foreground = $successBrush }
+        elseif ($line -match '(?i)^(WARNING|WARN|CAUTION|LOW|DISABLED)')               { $run.Foreground = $warningBrush }
+        elseif ($line -match '^\[.+\]') {
+            $run.Foreground = $sectionBrush
+            $run.FontWeight = [System.Windows.FontWeights]::SemiBold
+        } else { $run.Foreground = $normalBrush }
+
+        $para.Inlines.Add($run)
+        $doc.Blocks.Add($para)
+    }
+
     $terminalOutputBox.ScrollToEnd()
+
+    # Cap document to prevent memory growth in long sessions
+    while ($doc.Blocks.Count -gt 600) {
+        $doc.Blocks.Remove($doc.Blocks.FirstBlock)
+    }
 }
 
 function global:Show-Progress {
@@ -658,8 +711,9 @@ $Window.Add_KeyDown({
     if ($e.Key -eq 'C' -and
         ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -and
         ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Shift)) {
-        if ($terminalOutputBox.Text) {
-            Set-Clipboard -Value $terminalOutputBox.Text
+        $txt = Get-OutputText
+        if ($txt.Trim()) {
+            Set-Clipboard -Value $txt
             Update-StatusBar "Output copied to clipboard"
         }
         $e.Handled = $true
@@ -669,7 +723,7 @@ $Window.Add_KeyDown({
     # Ctrl+L - Clear output
     if ($e.Key -eq 'L' -and
         ([System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control)) {
-        $terminalOutputBox.Text = ""
+        $terminalOutputBox.Document.Blocks.Clear()
         Update-StatusBar "Output cleared"
         Update-WindowTitle
         $e.Handled = $true
@@ -709,43 +763,91 @@ $txtHostname.Add_KeyDown({
 })
 
 # ============================================================
-# Search Functionality
+# Search Functionality (TextPointer-based for RichTextBox)
 # ============================================================
 
-$script:SearchLastIndex = -1
+# Stores the TextPointer of the last found match start
+$script:SearchLastPointer = $null
+
+function global:Find-InRichTextBox {
+    param([string]$SearchText, [System.Windows.Documents.TextPointer]$StartPointer = $null)
+
+    if (-not $StartPointer) {
+        $StartPointer = $terminalOutputBox.Document.ContentStart
+    }
+
+    $endRange = New-Object System.Windows.Documents.TextRange(
+        $StartPointer,
+        $terminalOutputBox.Document.ContentEnd)
+    $fullText = $endRange.Text
+
+    $index = $fullText.IndexOf($SearchText, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($index -lt 0) { return $null }
+
+    # Walk forward through TextPointers to find the character position
+    $pointer = $StartPointer
+    $charsTraversed = 0
+    while ($pointer -ne $null -and $charsTraversed -lt $index) {
+        $ctx = $pointer.GetPointerContext([System.Windows.Documents.LogicalDirection]::Forward)
+        if ($ctx -eq [System.Windows.Documents.TextPointerContext]::Text) {
+            $run = $pointer.GetTextInRun([System.Windows.Documents.LogicalDirection]::Forward)
+            $remaining = $index - $charsTraversed
+            if ($run.Length -ge $remaining) {
+                $pointer = $pointer.GetPositionAtOffset($remaining)
+                $charsTraversed = $index
+                break
+            }
+            $charsTraversed += $run.Length
+        }
+        $next = $pointer.GetNextContextPosition([System.Windows.Documents.LogicalDirection]::Forward)
+        if ($next -eq $null) { break }
+        $pointer = $next
+    }
+
+    if ($pointer) {
+        $endPointer = $pointer.GetPositionAtOffset($SearchText.Length, [System.Windows.Documents.LogicalDirection]::Forward)
+        if ($endPointer) {
+            return @{ Start = $pointer; End = $endPointer }
+        }
+    }
+    return $null
+}
 
 $txtSearch.Add_TextChanged({
     $searchText = $txtSearch.Text
-    $script:SearchLastIndex = -1
+    $script:SearchLastPointer = $null
 
     if (-not $searchText) {
-        $terminalOutputBox.Select(0, 0)
+        $terminalOutputBox.Selection.Select(
+            $terminalOutputBox.Document.ContentStart,
+            $terminalOutputBox.Document.ContentStart)
         $lblSearchStatus.Content = ""
         return
     }
 
-    $text = $terminalOutputBox.Text
-    if (-not $text) {
+    $fullText = Get-OutputText
+    if (-not $fullText.Trim()) {
         $lblSearchStatus.Content = "No content"
         return
     }
 
-    $index = $text.IndexOf($searchText, [System.StringComparison]::OrdinalIgnoreCase)
-    if ($index -ge 0) {
-        $script:SearchLastIndex = $index
-        $terminalOutputBox.Focus()
-        $terminalOutputBox.Select($index, $searchText.Length)
-        $lineIndex = $terminalOutputBox.GetLineIndexFromCharacterIndex($index)
-        if ($lineIndex -ge 0) { $terminalOutputBox.ScrollToLine($lineIndex) }
+    $match = Find-InRichTextBox -SearchText $searchText
+    if ($match) {
+        $script:SearchLastPointer = $match.Start
+        $terminalOutputBox.Selection.Select($match.Start, $match.End)
+        $terminalOutputBox.ScrollToVerticalOffset(
+            $terminalOutputBox.VerticalOffset)
         # Count total matches
         $count = 0; $pos = 0
-        while (($pos = $text.IndexOf($searchText, $pos, [System.StringComparison]::OrdinalIgnoreCase)) -ge 0) {
+        while (($pos = $fullText.IndexOf($searchText, $pos, [System.StringComparison]::OrdinalIgnoreCase)) -ge 0) {
             $count++; $pos += $searchText.Length
         }
         $lblSearchStatus.Content = "$count match$(if($count -ne 1){'es'})"
         $txtSearch.Focus()
     } else {
-        $terminalOutputBox.Select(0, 0)
+        $terminalOutputBox.Selection.Select(
+            $terminalOutputBox.Document.ContentStart,
+            $terminalOutputBox.Document.ContentStart)
         $lblSearchStatus.Content = "No matches"
     }
 })
@@ -755,22 +857,24 @@ $txtSearch.Add_KeyDown({
     param($sender, $e)
     if ($e.Key -eq 'F3' -or $e.Key -eq 'Return') {
         $searchText = $txtSearch.Text
-        if (-not $searchText -or -not $terminalOutputBox.Text) { return }
+        $fullText = Get-OutputText
+        if (-not $searchText -or -not $fullText.Trim()) { $e.Handled = $true; return }
 
-        $startPos = if ($script:SearchLastIndex -ge 0) { $script:SearchLastIndex + $searchText.Length } else { 0 }
-        if ($startPos -ge $terminalOutputBox.Text.Length) { $startPos = 0 }
-
-        $index = $terminalOutputBox.Text.IndexOf($searchText, $startPos, [System.StringComparison]::OrdinalIgnoreCase)
-        if ($index -lt 0) {
-            # Wrap around
-            $index = $terminalOutputBox.Text.IndexOf($searchText, 0, [System.StringComparison]::OrdinalIgnoreCase)
+        # Start search after current match, or from beginning
+        $startPtr = $null
+        if ($script:SearchLastPointer) {
+            $startPtr = $script:SearchLastPointer.GetPositionAtOffset(
+                $searchText.Length, [System.Windows.Documents.LogicalDirection]::Forward)
         }
-        if ($index -ge 0) {
-            $script:SearchLastIndex = $index
-            $terminalOutputBox.Focus()
-            $terminalOutputBox.Select($index, $searchText.Length)
-            $lineIndex = $terminalOutputBox.GetLineIndexFromCharacterIndex($index)
-            if ($lineIndex -ge 0) { $terminalOutputBox.ScrollToLine($lineIndex) }
+
+        $match = Find-InRichTextBox -SearchText $searchText -StartPointer $startPtr
+        if (-not $match) {
+            # Wrap around from document start
+            $match = Find-InRichTextBox -SearchText $searchText
+        }
+        if ($match) {
+            $script:SearchLastPointer = $match.Start
+            $terminalOutputBox.Selection.Select($match.Start, $match.End)
             $txtSearch.Focus()
         }
         $e.Handled = $true
@@ -792,8 +896,9 @@ $btnCloseSearch.Add_Click({
 # ============================================================
 
 $ctxCopy.Add_Click({
-    if ($terminalOutputBox.Text) {
-        Set-Clipboard -Value $terminalOutputBox.Text
+    $txt = Get-OutputText
+    if ($txt.Trim()) {
+        Set-Clipboard -Value $txt
         Update-StatusBar "Output copied to clipboard"
     } else {
         Update-StatusBar "Nothing to copy"
@@ -815,14 +920,15 @@ $ctxSearch.Add_Click({
 })
 
 $ctxClear.Add_Click({
-    $terminalOutputBox.Text = ""
+    $terminalOutputBox.Document.Blocks.Clear()
     Update-StatusBar "Output cleared"
     Update-WindowTitle
     Set-HostnameColor ([System.Windows.Media.Brushes]::White)
 })
 
 $ctxSaveToFile.Add_Click({
-    if (-not $terminalOutputBox.Text) {
+    $txt = Get-OutputText
+    if (-not $txt.Trim()) {
         Update-StatusBar "Nothing to save"
         return
     }
@@ -831,7 +937,7 @@ $ctxSaveToFile.Add_Click({
     $dlg.FileName = "MultiTool-Output-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
     if ($dlg.ShowDialog()) {
         try {
-            $terminalOutputBox.Text | Out-File -FilePath $dlg.FileName -Encoding UTF8
+            $txt | Out-File -FilePath $dlg.FileName -Encoding UTF8
             Update-StatusBar "Output saved to $($dlg.FileName)"
             [Logger]::Info("Output saved to $($dlg.FileName)")
         } catch {
@@ -2070,7 +2176,7 @@ $btnLogOff.Add_Click({
 
 # Clear Output Button Click Event
 $btnClearOutput.Add_Click({
-    $terminalOutputBox.Text = ""
+    $terminalOutputBox.Document.Blocks.Clear()
     Update-StatusBar "Output cleared"
     Update-WindowTitle
     Set-HostnameColor ([System.Windows.Media.Brushes]::White)
@@ -2078,8 +2184,9 @@ $btnClearOutput.Add_Click({
 
 # Copy to Clipboard Button Click Event
 $btnCopyOutput.Add_Click({
-    if ($terminalOutputBox.Text) {
-        Set-Clipboard -Value $terminalOutputBox.Text
+    $txt = Get-OutputText
+    if ($txt.Trim()) {
+        Set-Clipboard -Value $txt
         Update-StatusBar "Output copied to clipboard"
     } else {
         Update-StatusBar "Nothing to copy"
