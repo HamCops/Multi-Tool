@@ -292,7 +292,7 @@ function Get-SafeDateTime {
 }
 
 function Test-RemoteConnectivity {
-    param($ComputerName, $TimeoutSeconds = 10)
+    param($ComputerName)
 
     $result = @{
         IsReachable = $false
@@ -726,8 +726,8 @@ $btnPing.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $computer = $hostnameOrIp
 
-    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer, $Global:AppConfig.Network.DefaultTimeout) -ScriptBlock {
-        param($comp, $timeout)
+    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer) -ScriptBlock {
+        param($comp)
 
         $result = @{ IsReachable = $false; CanResolve = $false; CanPing = $false; CanWinRM = $false; User = $null }
 
@@ -1222,8 +1222,8 @@ $btnHealthScan.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer, $Global:AppConfig.Network.DefaultTimeout) -ScriptBlock {
-        param($comp, $timeout)
+    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer) -ScriptBlock {
+        param($comp)
 
         # Connectivity checks
         $conn = @{ CanResolve = $false; CanPing = $false; CanWinRM = $false }
