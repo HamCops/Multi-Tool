@@ -90,13 +90,15 @@ $XAML = @"
                 </Setter.Value>
             </Setter>
         </Style>
-        <!-- GroupBox style -->
-        <Style x:Key="GroupHeader" TargetType="GroupBox">
+        <!-- Expander section style -->
+        <Style x:Key="ExpanderSection" TargetType="Expander">
             <Setter Property="Foreground" Value="#4A90D9"/>
             <Setter Property="BorderBrush" Value="#2A5A8F"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Margin" Value="6"/>
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="Transparent"/>
         </Style>
     </Window.Resources>
     <Grid>
@@ -127,7 +129,7 @@ $XAML = @"
             </Grid.RowDefinitions>
 
             <!-- Diagnostics -->
-            <GroupBox Header="Diagnostics" Grid.Column="0" Grid.Row="0" Style="{StaticResource GroupHeader}">
+            <Expander Header="Diagnostics" Grid.Column="0" Grid.Row="0" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
                     <Button Name="btnPing" Content="Ping" Style="{StaticResource ToolBtn}" ToolTip="Test connectivity: DNS, ping, and WinRM reachability"/>
                     <Button Name="btnGetSystemInfo" Content="Get System Info" Style="{StaticResource ToolBtn}" ToolTip="OS, CPU, RAM, disk, and network adapter info"/>
@@ -137,20 +139,20 @@ $XAML = @"
                     <Button Name="btnDiskCheck" Content="Disk Space Check" Style="{StaticResource ToolBtn}" ToolTip="Check all drives - warns if below 20% free"/>
                     <Button Name="btnResetWiFi" Content="Reset Wi-Fi Adapter" Style="{StaticResource ToolBtn}" ToolTip="Disable and re-enable the Wi-Fi adapter to fix connectivity issues"/>
                 </WrapPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Remote Tools -->
-            <GroupBox Header="Remote Tools" Grid.Column="1" Grid.Row="0" Style="{StaticResource GroupHeader}">
+            <Expander Header="Remote Tools" Grid.Column="1" Grid.Row="0" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
                     <Button Name="btnOpenPSSession" Content="Open PS Session" Style="{StaticResource ToolBtn}" ToolTip="Open an interactive PowerShell remoting session in a new window"/>
                     <Button Name="btnMSRA" Content="Launch MSRA" Style="{StaticResource ToolBtn}" ToolTip="Offer Remote Assistance to the target machine (requires Remote Assistance feature)"/>
                     <Button Name="btnRDC" Content="Launch RDC" Style="{StaticResource ToolBtn}" ToolTip="Connect via Remote Desktop Connection (mstsc)"/>
                     <Button Name="btnEventLog" Content="Open Event Log" Style="{StaticResource ToolBtn}" ToolTip="Open Event Viewer connected to the remote machine"/>
                 </WrapPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Management -->
-            <GroupBox Header="Management" Grid.Column="0" Grid.Row="1" Style="{StaticResource GroupHeader}">
+            <Expander Header="Management" Grid.Column="0" Grid.Row="1" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
                     <Button Name="btnGpUpdate" Content="Run GPUpdate" Style="{StaticResource ToolBtn}" ToolTip="Force Group Policy refresh on remote machine (gpupdate /force)"/>
                     <Button Name="btnGetInstalledSoftware" Content="Get Installed Software" Style="{StaticResource ToolBtn}" ToolTip="List all installed software from registry (requires credentials)"/>
@@ -159,17 +161,17 @@ $XAML = @"
                     <Button Name="btnClearDNS" Content="Clear DNS Cache" Style="{StaticResource ToolBtn}" ToolTip="Flush DNS resolver cache on remote machine (ipconfig /flushdns)"/>
                     <Button Name="btnRestart" Content="Remote Restart" Style="{StaticResource ToolBtn}" ToolTip="Restart the remote machine  -  confirmation required"/>
                 </WrapPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Utilities -->
-            <GroupBox Header="Utilities" Grid.Column="1" Grid.Row="1" Style="{StaticResource GroupHeader}">
+            <Expander Header="Utilities" Grid.Column="1" Grid.Row="1" IsExpanded="True" Style="{StaticResource ExpanderSection}">
                 <WrapPanel>
                     <Button Name="btnIncident" Content="Open IncidentIQ" Style="{StaticResource ToolBtn}" ToolTip="Open the IncidentIQ ticketing portal in your browser"/>
                     <Button Name="btnFixMDT" Content="Fix MDT Error" Style="{StaticResource ToolBtn}" ToolTip="Remove MDT/WDT deployment artifacts from remote machine (requires credentials)"/>
                     <Button Name="btnClearOutput" Content="Clear Output" Style="{StaticResource ToolBtn}" ToolTip="Clear the output box and reset status (Ctrl+L)"/>
                     <Button Name="btnCopyOutput" Content="Copy to Clipboard" Style="{StaticResource ToolBtn}" ToolTip="Copy output box contents to clipboard (Ctrl+Shift+C)"/>
                 </WrapPanel>
-            </GroupBox>
+            </Expander>
         </Grid>
 
         <!-- Progress Bar (indeterminate) -->
