@@ -322,7 +322,6 @@ notepad "$env:TEMP\MultiTool.log"
 Multi-Tool/
 ├── Multi-Tool.PS1              # Main application — fully self-contained
 ├── README.md                   # This file
-├── CLAUDE.md                   # Development guide for AI-assisted modifications
 └── Multi-Tool.code-workspace   # VS Code workspace
 ```
 
@@ -339,4 +338,4 @@ This tool performs administrative operations on remote systems. Always:
 ---
 
 **Last Updated**: 2026-03-19
-**Maintained By**: IT Department
+**Maintained By**: [HamCops](https://github.com/HamCops)
