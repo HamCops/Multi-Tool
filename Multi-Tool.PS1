@@ -1073,19 +1073,14 @@ $btnGetSystemInfo.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "System Info on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
 
-        $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
-        if ($cred) {
-            $cimParams.Credential = $cred
-            $cimParams.SessionOption = New-CimSessionOption -Protocol Wsman
-        }
-        $cimSession = New-CimSession @cimParams
-        try {
-            $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
-            $cpuInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_Processor
-            $memInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_PhysicalMemory
-            $diskInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_LogicalDisk -Filter "DriveType=3"
-            $networkInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True"
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
+            $osInfo = Get-CimInstance Win32_OperatingSystem
+            $cpuInfo = Get-CimInstance Win32_Processor
+            $memInfo = Get-CimInstance Win32_PhysicalMemory
+            $diskInfo = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
+            $networkInfo = Get-CimInstance Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True"
 
             $lastBoot = $osInfo.LastBootUpTime
             if ($lastBoot) {
@@ -1104,30 +1099,25 @@ $btnGetSystemInfo.Add_Click({
             $ipAddress = ($networkInfo.IPAddress | Where-Object { $_ -match '\.' } | Select-Object -First 1) -join ", "
             $dnsServers = ($networkInfo.DNSServerSearchOrder | Where-Object { $_ }) -join ", "
 
-            return @{
-                Success = $true
-                Data = @(
-                    "OS: $($osInfo.Caption)",
-                    "Architecture: $($osInfo.OSArchitecture)",
-                    "Machine Name: $($osInfo.CSName)",
-                    "Current User: $($osInfo.UserName)",
-                    "Uptime: $uptimeString",
-                    "",
-                    "CPU: $($cpuInfo.Name)",
-                    "Cores: $($cpuInfo.NumberOfCores)  |  Clock: $($cpuInfo.MaxClockSpeed) MHz",
-                    "",
-                    "Total RAM: $totalMemoryGB GB",
-                    "",
-                    $diskOutput,
-                    "",
-                    "IP Address: $ipAddress",
-                    "DNS Servers: $dnsServers"
-                ) -join "`r`n"
-            }
+            return @(
+                "OS: $($osInfo.Caption)",
+                "Architecture: $($osInfo.OSArchitecture)",
+                "Machine Name: $($osInfo.CSName)",
+                "Current User: $($osInfo.UserName)",
+                "Uptime: $uptimeString",
+                "",
+                "CPU: $($cpuInfo.Name)",
+                "Cores: $($cpuInfo.NumberOfCores)  |  Clock: $($cpuInfo.MaxClockSpeed) MHz",
+                "",
+                "Total RAM: $totalMemoryGB GB",
+                "",
+                $diskOutput,
+                "",
+                "IP Address: $ipAddress",
+                "DNS Servers: $dnsServers"
+            ) -join "`r`n"
         }
-        finally {
-            Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
-        }
+        return @{ Success = $true; Data = $data }
     } -OnComplete {
         param($result, $ctx)
         $r = $result | Select-Object -First 1
@@ -1370,26 +1360,20 @@ $btnGetUpTime.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Uptime on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
-        if ($cred) {
-            $cimParams.Credential = $cred
-            $cimParams.SessionOption = New-CimSessionOption -Protocol Wsman
-        }
-        $cimSession = New-CimSession @cimParams
-        try {
-            $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
+
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
+            $osInfo = Get-CimInstance Win32_OperatingSystem
             $lastBoot = $osInfo.LastBootUpTime
             if ($lastBoot) {
                 $uptime = (Get-Date) - $lastBoot
                 $uptimeString = "{0:D2} days {1:D2} hrs {2:D2} mins {3:D2} secs" -f $uptime.Days, $uptime.Hours, $uptime.Minutes, $uptime.Seconds
-                return @{ Success = $true; Data = "Uptime: $uptimeString`r`nLast Boot: $($lastBoot.ToString('yyyy-MM-dd HH:mm:ss'))" }
+                return "Uptime: $uptimeString`r`nLast Boot: $($lastBoot.ToString('yyyy-MM-dd HH:mm:ss'))"
             } else {
-                return @{ Success = $true; Data = "Could not retrieve last boot time." }
+                return "Could not retrieve last boot time."
             }
         }
-        finally {
-            Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue
-        }
+        return @{ Success = $true; Data = $data }
     } -OnComplete {
         param($result, $ctx)
         $r = $result | Select-Object -First 1
