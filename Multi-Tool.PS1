@@ -52,6 +52,9 @@ $Global:AppConfig = @{
     }
 }
 
+# Cached alternate credentials (set via UI button, used by all remote operations)
+$script:SavedCredential = $null
+
 # XAML GUI Definition
 $XAML = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -115,6 +118,9 @@ $XAML = @"
             <ComboBox Name="txtHostname" Width="320" Height="32" IsEditable="True" Text="Enter Hostname/IP" Background="White" FontSize="13" VerticalContentAlignment="Center" Foreground="Gray"/>
             <Button Name="btnResolve" Content="Resolve" Width="100" Height="32" Margin="8,0,0,0" Style="{StaticResource ToolBtn}">
                 <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="DNS Resolve"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Resolves a hostname to its IP address, or performs a reverse PTR lookup of an IP to a hostname."/><TextBlock FontStyle="Italic" Foreground="#8BB8D8" Margin="0,4,0,0" Text="Command: Resolve-DnsName"/></StackPanel></ToolTip></Button.ToolTip>
+            </Button>
+            <Button Name="btnSetCredentials" Content="Creds" Width="60" Height="32" Margin="8,0,0,0" Style="{StaticResource ToolBtn}">
+                <Button.ToolTip><ToolTip Background="#1E3A5F" BorderBrush="#4A90D9" Foreground="White"><StackPanel MaxWidth="280"><TextBlock FontWeight="Bold" Text="Set Credentials"/><TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="Set alternate credentials for remote operations. Use when default Kerberos authentication fails. Click again to clear or replace."/></StackPanel></ToolTip></Button.ToolTip>
             </Button>
         </StackPanel>
 
@@ -308,6 +314,7 @@ $btnClearOutput = $Window.FindName("btnClearOutput")
 $btnCopyOutput = $Window.FindName("btnCopyOutput")
 $btnHealthScan = $Window.FindName("btnHealthScan")
 $btnDiskCheck = $Window.FindName("btnDiskCheck")
+$btnSetCredentials = $Window.FindName("btnSetCredentials")
 $btnResetWiFi = $Window.FindName("btnResetWiFi")
 $progressBar = $Window.FindName("progressBar")
 $searchBorder = $Window.FindName("searchBorder")
@@ -953,6 +960,42 @@ $ctxSaveToFile.Add_Click({
 # Event Handlers
 # ============================================================
 
+# Set Credentials Button Click Event
+$btnSetCredentials.Add_Click({
+    if ($script:SavedCredential) {
+        $choice = [System.Windows.MessageBox]::Show(
+            "Alternate credentials are set for: $($script:SavedCredential.UserName)`r`n`r`nClear credentials and return to default authentication?",
+            "Manage Credentials",
+            [System.Windows.MessageBoxButton]::YesNoCancel,
+            [System.Windows.MessageBoxImage]::Question
+        )
+        if ($choice -eq [System.Windows.MessageBoxResult]::Yes) {
+            $script:SavedCredential = $null
+            $btnSetCredentials.Content = "Creds"
+            Update-StatusBar "Credentials cleared - using default authentication"
+            [Logger]::Info("Alternate credentials cleared")
+        }
+        elseif ($choice -eq [System.Windows.MessageBoxResult]::No) {
+            $cred = Get-Credential -Message "Enter alternate credentials for remote operations"
+            if ($cred) {
+                $script:SavedCredential = $cred
+                $btnSetCredentials.Content = "Creds *"
+                Update-StatusBar "Credentials updated for: $($cred.UserName)"
+                [Logger]::Info("Alternate credentials updated: $($cred.UserName)")
+            }
+        }
+    }
+    else {
+        $cred = Get-Credential -Message "Enter alternate credentials for remote operations"
+        if ($cred) {
+            $script:SavedCredential = $cred
+            $btnSetCredentials.Content = "Creds *"
+            Update-StatusBar "Alternate credentials set for: $($cred.UserName)"
+            [Logger]::Info("Alternate credentials set: $($cred.UserName)")
+        }
+    }
+})
+
 # Ping Button Click Event
 $btnPing.Add_Click({
     $hostnameOrIp = [InputValidator]::SanitizeInput($txtHostname.Text)
@@ -965,8 +1008,10 @@ $btnPing.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $computer = $hostnameOrIp
 
-    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
 
         $result = @{ IsReachable = $false; CanResolve = $false; CanPing = $false; CanWinRM = $false; User = $null }
 
@@ -977,7 +1022,7 @@ $btnPing.Add_Click({
 
         if ($result.CanWinRM) {
             try {
-                $result.User = Invoke-Command -ComputerName $comp -ScriptBlock {
+                $result.User = Invoke-Command -ComputerName $comp @credSplat -ScriptBlock {
                     quser 2>$null | Select-Object -Skip 1 | ForEach-Object {
                         if ($_ -match '^\s*>?\s*(\S+)') { $matches[1] }
                     } | Select-Object -First 1
@@ -1024,10 +1069,13 @@ $btnGetSystemInfo.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "System Info on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "System Info on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
 
-        $cimSession = New-CimSession -ComputerName $comp -ErrorAction Stop
+        $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
+        if ($cred) { $cimParams.Credential = $cred }
+        $cimSession = New-CimSession @cimParams
         try {
             $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
             $cpuInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_Processor
@@ -1171,9 +1219,11 @@ $btnGpUpdate.Add_Click({
     Update-WindowTitle -Hostname $hostnameOrIp
     $computer = $hostnameOrIp
 
-    Invoke-Async -Label "GPUpdate on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $output = Invoke-Command -ComputerName $comp -ScriptBlock { gpupdate /force 2>&1 | Out-String } -ErrorAction Stop
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "GPUpdate on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $output = Invoke-Command -ComputerName $comp @credSplat -ScriptBlock { gpupdate /force 2>&1 | Out-String } -ErrorAction Stop
         return @{ Success = $true; Data = $output }
     } -OnComplete {
         param($result, $ctx)
@@ -1259,10 +1309,13 @@ $btnGetInstalledSoftware.Add_Click({
         return
     }
 
-    $credential = Get-Credential -Message "Enter credentials for $remoteMachine"
+    $credential = $script:SavedCredential
     if (-not $credential) {
-        Append-Output "Operation cancelled: No credentials provided." -Header "Cancelled"
-        return
+        $credential = Get-Credential -Message "Enter credentials for $remoteMachine"
+        if (-not $credential) {
+            Append-Output "Operation cancelled: No credentials provided." -Header "Cancelled"
+            return
+        }
     }
 
     Update-WindowTitle -Hostname $remoteMachine
@@ -1310,9 +1363,12 @@ $btnGetUpTime.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Uptime on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $cimSession = New-CimSession -ComputerName $comp -ErrorAction Stop
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Uptime on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
+        if ($cred) { $cimParams.Credential = $cred }
+        $cimSession = New-CimSession @cimParams
         try {
             $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
             $lastBoot = $osInfo.LastBootUpTime
@@ -1348,9 +1404,11 @@ $btnDiskCheck.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Disk Check on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Disk Check on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
             $output = @()
             foreach ($disk in $disks) {
@@ -1403,9 +1461,11 @@ $btnResetWiFi.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Reset Wi-Fi on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Reset Wi-Fi on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $WiFiDevice = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue |
                 Where-Object { $_.FriendlyName -match 'Wi-Fi|WiFi|Wireless|WLAN|802\.11' -and $_.InstanceId -notmatch 'ROOT\\' }
 
@@ -1461,8 +1521,10 @@ $btnHealthScan.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
 
         # Connectivity checks
         $conn = @{ CanResolve = $false; CanPing = $false; CanWinRM = $false }
@@ -1471,7 +1533,7 @@ $btnHealthScan.Add_Click({
         try { Test-WSMan -ComputerName $comp -ErrorAction Stop | Out-Null; $conn.CanWinRM = $true } catch { }
 
         # Remote data
-        $remoteData = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+        $remoteData = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $os       = Get-CimInstance Win32_OperatingSystem
             $disks    = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
             $battery  = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
@@ -1567,10 +1629,13 @@ $btnFixMDT.Add_Click({
             return
         }
 
-        $credential = Get-Credential -Message "Enter administrator credentials for $remoteMachine"
+        $credential = $script:SavedCredential
         if (-not $credential) {
-            Append-Output "Operation cancelled: No credentials provided." -Header "Cancelled"
-            return
+            $credential = Get-Credential -Message "Enter administrator credentials for $remoteMachine"
+            if (-not $credential) {
+                Append-Output "Operation cancelled: No credentials provided." -Header "Cancelled"
+                return
+            }
         }
 
         Update-WindowTitle -Hostname $remoteMachine
@@ -1922,9 +1987,11 @@ $btnClearPrintQueue.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Clear Print Queue on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Clear Print Queue on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $output = @()
 
             $output += "Stopping Print Spooler service..."
@@ -1993,9 +2060,11 @@ $btnClearDNS.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Clear DNS on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Clear DNS on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $flushOutput = ipconfig /flushdns 2>&1 | Out-String
 
             try {
@@ -2047,9 +2116,12 @@ $btnRestart.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Restart $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        Restart-Computer -ComputerName $comp -Force -ErrorAction Stop
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Restart $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $restartParams = @{ ComputerName = $comp; Force = $true; ErrorAction = 'Stop' }
+        if ($cred) { $restartParams.Credential = $cred }
+        Restart-Computer @restartParams
         return @{ Success = $true; Data = "Restart command sent successfully to $comp.`r`nThe remote computer should restart within a few seconds." }
     } -OnComplete {
         param($result, $ctx)
@@ -2073,9 +2145,11 @@ $btnFirewallStatus.Add_Click({
     Update-WindowTitle -Hostname $remoteMachine
     $computer = $remoteMachine
 
-    Invoke-Async -Label "Firewall Status on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $data = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Firewall Status on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction
 
             $output = @()
@@ -2125,9 +2199,11 @@ $btnLogOff.Add_Click({
     $computer = $remoteMachine
 
     # Step 1: Query sessions asynchronously
-    Invoke-Async -Label "Query Sessions on $computer" -Arguments @($computer) -Context @{ Computer = $computer } -ScriptBlock {
-        param($comp)
-        $sessions = Invoke-Command -ComputerName $comp -ErrorAction Stop -ScriptBlock {
+    $cred = $script:SavedCredential
+    Invoke-Async -Label "Query Sessions on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
+        param($comp, $cred)
+        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $sessions = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             quser 2>$null | Out-String
         }
         if (-not $sessions -or $sessions.Trim() -eq "") {
@@ -2158,9 +2234,11 @@ $btnLogOff.Add_Click({
 
         $sid = $sessionInput
         # Step 2: Perform log off asynchronously
-        Invoke-Async -Label "Log Off Session $sid on $comp" -Arguments @($comp, $sid) -Context @{ Computer = $comp } -ScriptBlock {
-            param($computer, $sessionId)
-            Invoke-Command -ComputerName $computer -ScriptBlock {
+        $cred2 = $script:SavedCredential
+        Invoke-Async -Label "Log Off Session $sid on $comp" -Arguments @($comp, $sid, $cred2) -Context @{ Computer = $comp } -ScriptBlock {
+            param($computer, $sessionId, $cred)
+            $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+            Invoke-Command -ComputerName $computer @credSplat -ScriptBlock {
                 param($s)
                 logoff $s 2>&1 | Out-Null
             } -ArgumentList $sessionId -ErrorAction Stop
@@ -2235,6 +2313,9 @@ $Window.Add_Loaded({
 
 # Cleanup on window close
 $Window.Add_Closed({
+    # Clear cached credentials
+    $script:SavedCredential = $null
+
     # Stop timer
     if ($script:AsyncTimer) {
         $script:AsyncTimer.Stop()
