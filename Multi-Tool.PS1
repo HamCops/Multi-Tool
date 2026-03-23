@@ -615,7 +615,8 @@ function global:Invoke-Async {
 
     Set-ButtonsEnabled -Enabled $false
     Show-Progress -Show $true
-    Update-StatusBar "Running $Label..."
+    $credStatus = if ($script:SavedCredential) { " (using $($script:SavedCredential.UserName))" } else { "" }
+    Update-StatusBar "Running $Label...$credStatus"
 
     $ps = [powershell]::Create()
     $ps.RunspacePool = $script:RunspacePool
