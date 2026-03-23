@@ -1011,7 +1011,7 @@ $btnPing.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Ping Test on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
 
         $result = @{ IsReachable = $false; CanResolve = $false; CanPing = $false; CanWinRM = $false; User = $null }
 
@@ -1074,7 +1074,10 @@ $btnGetSystemInfo.Add_Click({
         param($comp, $cred)
 
         $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
-        if ($cred) { $cimParams.Credential = $cred }
+        if ($cred) {
+            $cimParams.Credential = $cred
+            $cimParams.SessionOption = New-CimSessionOption -Protocol Wsman
+        }
         $cimSession = New-CimSession @cimParams
         try {
             $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
@@ -1222,7 +1225,7 @@ $btnGpUpdate.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "GPUpdate on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $output = Invoke-Command -ComputerName $comp @credSplat -ScriptBlock { gpupdate /force 2>&1 | Out-String } -ErrorAction Stop
         return @{ Success = $true; Data = $output }
     } -OnComplete {
@@ -1323,7 +1326,7 @@ $btnGetInstalledSoftware.Add_Click({
 
     Invoke-Async -Label "Installed Software on $computer" -Arguments @($computer, $credential) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $software = Invoke-Command -ComputerName $comp -Credential $cred -ErrorAction Stop -ScriptBlock {
+        $software = Invoke-Command -ComputerName $comp -Credential $cred -Authentication Negotiate -ErrorAction Stop -ScriptBlock {
             Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*,
                               HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*,
                               HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* -ErrorAction SilentlyContinue |
@@ -1367,7 +1370,10 @@ $btnGetUpTime.Add_Click({
     Invoke-Async -Label "Uptime on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
         $cimParams = @{ ComputerName = $comp; ErrorAction = 'Stop' }
-        if ($cred) { $cimParams.Credential = $cred }
+        if ($cred) {
+            $cimParams.Credential = $cred
+            $cimParams.SessionOption = New-CimSessionOption -Protocol Wsman
+        }
         $cimSession = New-CimSession @cimParams
         try {
             $osInfo = Get-CimInstance -CimSession $cimSession -ClassName Win32_OperatingSystem
@@ -1407,7 +1413,7 @@ $btnDiskCheck.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Disk Check on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
             $output = @()
@@ -1464,7 +1470,7 @@ $btnResetWiFi.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Reset Wi-Fi on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $WiFiDevice = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue |
                 Where-Object { $_.FriendlyName -match 'Wi-Fi|WiFi|Wireless|WLAN|802\.11' -and $_.InstanceId -notmatch 'ROOT\\' }
@@ -1524,7 +1530,7 @@ $btnHealthScan.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Health Scan on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
 
         # Connectivity checks
         $conn = @{ CanResolve = $false; CanPing = $false; CanWinRM = $false }
@@ -1644,7 +1650,7 @@ $btnFixMDT.Add_Click({
         Invoke-Async -Label "MDT Cleanup on $computer" -Arguments @($computer, $credential) -Context @{ Computer = $computer } -ScriptBlock {
             param($comp, $cred)
 
-            $cleanupResult = Invoke-Command -ComputerName $comp -Credential $cred -ErrorAction Stop -ScriptBlock {
+            $cleanupResult = Invoke-Command -ComputerName $comp -Credential $cred -Authentication Negotiate -ErrorAction Stop -ScriptBlock {
                 $issuesFound = 0
                 $issuesFixed = 0
                 $output = @()
@@ -1990,7 +1996,7 @@ $btnClearPrintQueue.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Clear Print Queue on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $output = @()
 
@@ -2063,7 +2069,7 @@ $btnClearDNS.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Clear DNS on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $flushOutput = ipconfig /flushdns 2>&1 | Out-String
 
@@ -2148,7 +2154,7 @@ $btnFirewallStatus.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Firewall Status on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $data = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction
 
@@ -2202,7 +2208,7 @@ $btnLogOff.Add_Click({
     $cred = $script:SavedCredential
     Invoke-Async -Label "Query Sessions on $computer" -Arguments @($computer, $cred) -Context @{ Computer = $computer } -ScriptBlock {
         param($comp, $cred)
-        $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+        $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
         $sessions = Invoke-Command -ComputerName $comp @credSplat -ErrorAction Stop -ScriptBlock {
             quser 2>$null | Out-String
         }
@@ -2237,7 +2243,7 @@ $btnLogOff.Add_Click({
         $cred2 = $script:SavedCredential
         Invoke-Async -Label "Log Off Session $sid on $comp" -Arguments @($comp, $sid, $cred2) -Context @{ Computer = $comp } -ScriptBlock {
             param($computer, $sessionId, $cred)
-            $credSplat = if ($cred) { @{ Credential = $cred } } else { @{} }
+            $credSplat = if ($cred) { @{ Credential = $cred; Authentication = 'Negotiate' } } else { @{} }
             Invoke-Command -ComputerName $computer @credSplat -ScriptBlock {
                 param($s)
                 logoff $s 2>&1 | Out-Null
