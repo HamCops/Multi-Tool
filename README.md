@@ -62,6 +62,48 @@ A PowerShell WPF-based graphical interface for remote Windows system administrat
 - **Administrator Rights**: User must have admin rights on target machines
 - **Same Domain**: Recommended for credential pass-through (or provide explicit credentials)
 
+## Preparing Target Machines
+
+Before Multi-Tool can manage a machine, that machine needs WinRM and a few
+firewall rules enabled. The repo includes `Enable-MultiToolTarget.ps1` to do
+this for you.
+
+Run it **on the target machine** from an **elevated** PowerShell prompt:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Enable-MultiToolTarget.ps1
+```
+
+It enables (with a per-step pass/fail summary):
+- PowerShell Remoting / WinRM (service set to Automatic, listener on TCP 5985)
+- Firewall rules: Windows Remote Management, Remote Desktop, Remote Event Log Management
+- Remote Desktop (RDP), for the **Launch RDC** button
+
+Useful options:
+
+| Option | Effect |
+|---|---|
+| `-EnableRemoteAssistance` | Also enable Remote Assistance (for the **Launch MSRA** button). Off by default; on Windows Server, run `Add-WindowsFeature Remote-Assistance` first. |
+| `-RestrictToSubnet "10.20.0.0/16"` | Scope the WinRM firewall rule to your management subnet (recommended). |
+| `-WhatIf` | Dry run — show what would change without applying anything. |
+
+The script refuses to run without elevation and prints a verification command
+when done. From the **admin workstation**, confirm the target is reachable:
+
+```powershell
+Test-WSMan -ComputerName TARGETNAME
+```
+
+A few things the script **can't** do for you (see the notes at the bottom of
+the script):
+- **Admin rights**: the account you authenticate as must be a local admin on the target (normally pushed via GPO/LAPS in a domain).
+- **Workgroup / cross-domain targets**: add the target to `TrustedHosts` on the admin workstation and supply explicit credentials.
+- **Public network profile**: the default WinRM rule only covers Domain/Private profiles.
+
+For a fleet, prefer **Group Policy** over running the script on every box — the
+script's footer documents the equivalent GPO settings for WinRM, the firewall,
+RDP, and Remote Assistance.
+
 ## Installation
 
 ### Download
@@ -321,6 +363,7 @@ notepad "$env:TEMP\MultiTool.log"
 ```
 Multi-Tool/
 ├── Multi-Tool.PS1              # Main application — fully self-contained
+├── Enable-MultiToolTarget.ps1  # Helper: provision a target machine for management
 ├── README.md                   # This file
 └── Multi-Tool.code-workspace   # VS Code workspace
 ```
